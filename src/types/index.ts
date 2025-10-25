@@ -13,6 +13,27 @@ export interface SessionStartResponse {
   message: string;
 }
 
+export interface SessionUpdateRequest {
+  sessionId: string;
+  lastQuestionId: string;
+}
+
+export interface SessionUpdateResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface AnswerSubmissionRequest {
+  sessionId: string;
+  questionId: string;
+  selectedOptionId: string;
+}
+
+export interface AnswerSubmissionResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface UserSession {
   session_id: string;
   quiz_id: string;
@@ -38,8 +59,10 @@ export interface QuizCreationOption {
 export interface QuizCreationQuestion {
   sequence_order: number;
   question_text: string;
-  interaction_type: string;
+  interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen';
   image_url?: string | null;
+  loader_text?: string | null;
+  popup_question?: string | null;
   options: QuizCreationOption[];
 }
 

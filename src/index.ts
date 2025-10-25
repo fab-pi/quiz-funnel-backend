@@ -2,6 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import sessionRoutes from './routes/session';
+import contentRoutes from './routes/content';
+import adminRoutes from './routes/admin';
+import analyticsRoutes from './routes/analytics';
+import uploadRoutes from './routes/upload';
 
 // Load environment variables
 dotenv.config();
@@ -30,7 +34,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Debug: Log route registration
-console.log('Registering routes under /api');
+console.log('Registering modular routes under /api');
 
 // Simple test route to isolate routing issues
 app.get('/api/test', (req, res) => {
@@ -38,9 +42,13 @@ app.get('/api/test', (req, res) => {
   res.send('Test OK');
 });
 
-// API Routes
-app.use('/api', sessionRoutes); // All routes mounted at /api
-console.log('✅ All routes registered under /api');
+// API Routes - Modular structure
+app.use('/api', sessionRoutes);     // Session management
+app.use('/api', contentRoutes);     // Quiz content
+app.use('/api', adminRoutes);        // Admin operations
+app.use('/api', analyticsRoutes);    // Analytics
+app.use('/api', uploadRoutes);       // File uploads
+console.log('✅ All modular routes registered under /api');
 
 // 404 handler
 app.use('*', (req, res) => {
