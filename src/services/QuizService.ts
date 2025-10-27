@@ -203,7 +203,7 @@ export class QuizService {
     try {
       // Get quiz info
       const quizResult = await client.query(
-        'SELECT quiz_id, quiz_name, product_page_url, is_active FROM quizzes WHERE quiz_id = $1',
+        'SELECT quiz_id, quiz_name, product_page_url, is_active, brand_logo_url, color_primary, color_secondary, color_text_default, color_text_hover FROM quizzes WHERE quiz_id = $1',
         [parseInt(quizId)]
       );
 
@@ -274,6 +274,11 @@ export class QuizService {
         quiz_id: quiz.quiz_id,
         quiz_name: quiz.quiz_name,
         product_page_url: quiz.product_page_url,
+        brand_logo_url: quiz.brand_logo_url,
+        color_primary: quiz.color_primary,
+        color_secondary: quiz.color_secondary,
+        color_text_default: quiz.color_text_default,
+        color_text_hover: quiz.color_text_hover,
         questions
       };
 
