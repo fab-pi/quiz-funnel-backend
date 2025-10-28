@@ -61,6 +61,7 @@ export interface QuizCreationQuestion {
   question_text: string;
   interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen';
   image_url?: string | null;
+  instructions_text?: string | null;
   loader_text?: string | null;
   popup_question?: string | null;
   options: QuizCreationOption[];

@@ -354,9 +354,10 @@ export class QuizService {
             question_text, 
             interaction_type, 
             image_url,
+            instructions_text,
             loader_text,
             popup_question
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           RETURNING question_id
         `, [
           quizId,
@@ -364,6 +365,7 @@ export class QuizService {
           question.question_text,
           question.interaction_type,
           question.image_url || null,
+          question.instructions_text || null,
           question.loader_text || null,
           question.popup_question || null
         ]);
