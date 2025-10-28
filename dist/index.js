@@ -7,6 +7,11 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const session_1 = __importDefault(require("./routes/session"));
+const content_1 = __importDefault(require("./routes/content"));
+const admin_1 = __importDefault(require("./routes/admin"));
+const analytics_1 = __importDefault(require("./routes/analytics"));
+const upload_1 = __importDefault(require("./routes/upload"));
+const errorHandler_1 = require("./middleware/errorHandler");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -28,8 +33,20 @@ app.get('/api/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development'
     });
 });
-// API Routes
-app.use('/session', session_1.default);
+// Debug: Log route registration
+console.log('Registering modular routes under /api');
+// Simple test route to isolate routing issues
+app.get('/api/test', (req, res) => {
+    console.log('✅ Test route hit: /api/test');
+    res.send('Test OK');
+});
+// API Routes - Modular structure
+app.use('/api', session_1.default); // Session management
+app.use('/api', content_1.default); // Quiz content
+app.use('/api', admin_1.default); // Admin operations
+app.use('/api', analytics_1.default); // Analytics
+app.use('/api', upload_1.default); // File uploads
+console.log('✅ All modular routes registered under /api');
 // 404 handler
 app.use('*', (req, res) => {
     res.status(404).json({
@@ -38,18 +55,17 @@ app.use('*', (req, res) => {
     });
 });
 // Error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-    });
-});
+app.use(errorHandler_1.errorHandler);
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Quiz Funnel Backend API running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`📝 Session endpoint: http://localhost:${PORT}/session/start`);
+    console.log(`📝 API endpoints:`);
+    console.log(`   - POST http://localhost:${PORT}/api/session/start`);
+    console.log(`   - POST http://localhost:${PORT}/api/session/update`);
+    console.log(`   - POST http://localhost:${PORT}/api/session/answers`);
+    console.log(`   - POST http://localhost:${PORT}/api/session/complete`);
+    console.log(`   - GET  http://localhost:${PORT}/api/content/quiz/:quizId`);
 });
 //# sourceMappingURL=index.js.map

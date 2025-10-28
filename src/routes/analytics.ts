@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { QuizService } from '../services/QuizService';
+import { AnalyticsService } from '../services/AnalyticsService';
 import pool from '../config/db';
 
 const router = Router();
-const quizService = new QuizService(pool);
+const analyticsService = new AnalyticsService(pool);
 
 // Debug: Log route definitions
 console.log('🔧 Defining analytics routes:');
@@ -23,7 +23,7 @@ router.get('/analytics/drop-rate/:quizId', async (req: Request, res: Response) =
       });
     }
 
-    const result = await quizService.getDropRateAnalytics(quizId);
+    const result = await analyticsService.getDropRateAnalytics(quizId);
     res.status(200).json({
       success: true,
       data: result
@@ -51,7 +51,7 @@ router.get('/analytics/utm-performance/:quizId', async (req: Request, res: Respo
       });
     }
 
-    const result = await quizService.getUTMPerformanceAnalytics(quizId);
+    const result = await analyticsService.getUTMPerformanceAnalytics(quizId);
     res.status(200).json({
       success: true,
       data: result

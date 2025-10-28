@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { QuizService } from '../services/QuizService';
+import { QuizCreationService } from '../services/QuizCreationService';
+import { AdminService } from '../services/AdminService';
 import { CloudinaryService } from '../services/CloudinaryService';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
 
 const router = Router();
-const quizService = new QuizService(pool);
+const quizCreationService = new QuizCreationService(pool);
+const adminService = new AdminService(pool);
 const cloudinaryService = new CloudinaryService();
 
 // Debug: Log route definitions
@@ -62,7 +64,7 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
       }
     }
 
-    const result = await quizService.createQuiz(data);
+    const result = await quizCreationService.createQuiz(data);
     res.status(201).json(result);
 
   } catch (error: any) {
@@ -79,7 +81,7 @@ router.get('/admin/quiz-summary', async (req: Request, res: Response) => {
   try {
     console.log('📊 Fetching quiz summary metrics...');
     
-    const summaryMetrics = await quizService.getQuizSummaryMetrics();
+    const summaryMetrics = await adminService.getQuizSummaryMetrics();
     
     res.json({
       success: true,

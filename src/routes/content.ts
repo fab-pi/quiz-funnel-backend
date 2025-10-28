@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { QuizService } from '../services/QuizService';
+import { QuizContentService } from '../services/QuizContentService';
 import pool from '../config/db';
 
 const router = Router();
-const quizService = new QuizService(pool);
+const quizContentService = new QuizContentService(pool);
 
 // Debug: Log route definitions
 console.log('🔧 Defining content routes:');
@@ -22,7 +22,7 @@ router.get('/content/quiz/:quizId', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await quizService.getQuizContent(quizId);
+    const result = await quizContentService.getQuizContent(quizId);
     res.status(200).json({
       success: true,
       data: result

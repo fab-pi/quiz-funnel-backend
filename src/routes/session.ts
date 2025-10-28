@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { QuizService } from '../services/QuizService';
+import { SessionService } from '../services/SessionService';
 import pool from '../config/db';
 import { SessionStartRequest, SessionUpdateRequest, AnswerSubmissionRequest } from '../types';
 
 const router = Router();
-const quizService = new QuizService(pool);
+const sessionService = new SessionService(pool);
 
 // Debug: Log route definitions
 console.log('🔧 Defining session routes:');
@@ -26,7 +26,7 @@ router.post('/session/start', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await quizService.startSession(data);
+    const result = await sessionService.startSession(data);
     res.status(200).json(result);
 
   } catch (error: any) {
@@ -51,7 +51,7 @@ router.post('/session/update', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await quizService.updateSession(data);
+    const result = await sessionService.updateSession(data);
     res.status(200).json(result);
 
   } catch (error: any) {
@@ -76,7 +76,7 @@ router.post('/session/answers', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await quizService.submitAnswer(data);
+    const result = await sessionService.submitAnswer(data);
     res.status(201).json(result);
 
   } catch (error: any) {
@@ -101,7 +101,7 @@ router.post('/session/complete', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await quizService.completeSession(sessionId);
+    const result = await sessionService.completeSession(sessionId);
     res.status(200).json(result);
 
   } catch (error: any) {

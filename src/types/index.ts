@@ -82,29 +82,31 @@ export interface QuizCreationRequest {
 export interface QuizCreationResponse {
   success: boolean;
   message: string;
-  quiz_id: number;
-  created_quiz: {
+  data: {
     quiz_id: number;
-    quiz_name: string;
-    product_page_url: string;
-    is_active: boolean;
-    brand_logo_url?: string | null;
-    color_primary: string;
-    color_secondary: string;
-    color_text_default: string;
-    color_text_hover: string;
-    questions: Array<{
-      question_id: number;
-      sequence_order: number;
-      question_text: string;
-      interaction_type: string;
-      image_url?: string | null;
-      options: Array<{
-        option_id: number;
-        option_text: string;
-        associated_value: string;
-        option_image_url?: string | null;
+    created_quiz: {
+      quiz_id: number;
+      quiz_name: string;
+      product_page_url: string;
+      is_active: boolean;
+      brand_logo_url?: string | null;
+      color_primary: string;
+      color_secondary: string;
+      color_text_default: string;
+      color_text_hover: string;
+      questions: Array<{
+        question_id: number;
+        sequence_order: number;
+        question_text: string;
+        interaction_type: string;
+        image_url?: string | null;
+        options: Array<{
+          option_id: number;
+          option_text: string;
+          associated_value: string;
+          option_image_url?: string | null;
+        }>;
       }>;
-    }>;
+    };
   };
 }

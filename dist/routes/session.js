@@ -4,47 +4,101 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const SessionService_1 = require("../services/SessionService");
 const db_1 = __importDefault(require("../config/db"));
 const router = (0, express_1.Router)();
+const sessionService = new SessionService_1.SessionService(db_1.default);
+// Debug: Log route definitions
+console.log('🔧 Defining session routes:');
+console.log('  - POST /session/start');
+console.log('  - POST /session/update');
+console.log('  - POST /session/answers');
+console.log('  - POST /session/complete');
 // POST /session/start
-router.post('/start', async (req, res) => {
+router.post('/session/start', async (req, res) => {
     try {
-        const { quiz_id, utm_source, utm_campaign, utm_medium, utm_term, utm_content } = req.body;
+        const data = req.body;
         // Validate required fields
-        if (!quiz_id) {
+        if (!data.quiz_id) {
             return res.status(400).json({
                 success: false,
                 message: 'quiz_id is required'
             });
         }
-        // Verify quiz exists
-        const quizCheck = await db_1.default.query('SELECT quiz_id FROM quizzes WHERE quiz_id = $1', [parseInt(quiz_id)]);
-        if (quizCheck.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Quiz not found'
-            });
-        }
-        // Generate session ID (using smaller number to fit in integer)
-        const sessionId = Math.floor(Math.random() * 1000000) + 1000;
-        // Insert new session
-        const result = await db_1.default.query(`INSERT INTO user_sessions 
-       (session_id, quiz_id, start_timestamp, last_question_viewed, is_completed, utm_source, utm_medium, utm_campaign)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING session_id`, [sessionId, parseInt(quiz_id), new Date(), 1, false, utm_source, utm_medium, utm_campaign]);
-        const response = {
-            session_id: result.rows[0].session_id,
-            success: true,
-            message: 'Session started successfully'
-        };
-        console.log(`✅ New session started: ${sessionId} for quiz: ${quiz_id}`);
-        res.status(201).json(response);
+        const result = await sessionService.startSession(data);
+        res.status(200).json(result);
     }
     catch (error) {
-        console.error('❌ Error starting session:', error);
+        console.error('❌ Error in session start:', error);
         res.status(500).json({
             success: false,
-            message: 'Internal server error'
+            message: error.message || 'Internal server error'
+        });
+    }
+});
+// POST /session/update
+router.post('/session/update', async (req, res) => {
+    try {
+        const data = req.body;
+        // Validate required fields
+        if (!data.sessionId || !data.lastQuestionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'sessionId and lastQuestionId are required'
+            });
+        }
+        const result = await sessionService.updateSession(data);
+        res.status(200).json(result);
+    }
+    catch (error) {
+        console.error('❌ Error in session update:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
+        });
+    }
+});
+// POST /session/answers
+router.post('/session/answers', async (req, res) => {
+    try {
+        const data = req.body;
+        // Validate required fields
+        if (!data.sessionId || !data.questionId || !data.selectedOptionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'sessionId, questionId, and selectedOptionId are required'
+            });
+        }
+        const result = await sessionService.submitAnswer(data);
+        res.status(201).json(result);
+    }
+    catch (error) {
+        console.error('❌ Error in answer submission:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
+        });
+    }
+});
+// POST /session/complete
+router.post('/session/complete', async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+        // Validate required fields
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'sessionId is required'
+            });
+        }
+        const result = await sessionService.completeSession(sessionId);
+        res.status(200).json(result);
+    }
+    catch (error) {
+        console.error('❌ Error in session completion:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
         });
     }
 });
