@@ -38,3 +38,4 @@ const checkMigrationStatus = async () => {
 };
 
 checkMigrationStatus().catch(console.error);
+

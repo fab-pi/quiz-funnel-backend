@@ -25,3 +25,4 @@ const initializeDatabase = async () => {
 };
 
 initializeDatabase().catch(console.error);
+

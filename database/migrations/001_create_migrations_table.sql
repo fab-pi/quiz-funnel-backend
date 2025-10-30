@@ -9,3 +9,4 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 -- Add comment
 COMMENT ON TABLE migrations IS 'Tracks applied database migrations';
+

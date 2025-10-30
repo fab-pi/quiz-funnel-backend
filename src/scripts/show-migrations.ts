@@ -30,3 +30,4 @@ const showMigrations = async () => {
 };
 
 showMigrations().catch(console.error);
+

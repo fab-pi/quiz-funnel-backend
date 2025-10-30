@@ -7,6 +7,7 @@ import adminRoutes from './routes/admin';
 import analyticsRoutes from './routes/analytics';
 import uploadRoutes from './routes/upload';
 import { errorHandler } from './middleware/errorHandler';
+import { iframeHeaders } from './middleware/iframeHeaders';
 
 // Load environment variables
 dotenv.config();
@@ -15,12 +16,39 @@ const app = express();
 const PORT = process.env.PORT || 3008;
 
 // Middleware
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.com'] 
-    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3008'],
-  credentials: true
-}));
+// CORS configuration - allow iframe embedding from various origins
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // In production, check against allowed origins
+    if (process.env.NODE_ENV === 'production') {
+      const allowedOrigins = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',')
+        : ['https://your-frontend-domain.com'];
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        // In production, be more restrictive
+        callback(new Error('Not allowed by CORS'));
+      }
+    } else {
+      // In development, allow all origins for easier testing
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
+app.use(cors(corsOptions));
+
+// Iframe-friendly headers middleware (allows embedding)
+app.use(iframeHeaders);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
