@@ -12,17 +12,43 @@ const admin_1 = __importDefault(require("./routes/admin"));
 const analytics_1 = __importDefault(require("./routes/analytics"));
 const upload_1 = __importDefault(require("./routes/upload"));
 const errorHandler_1 = require("./middleware/errorHandler");
+const iframeHeaders_1 = require("./middleware/iframeHeaders");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3008;
 // Middleware
-app.use((0, cors_1.default)({
-    origin: process.env.NODE_ENV === 'production'
-        ? ['https://your-frontend-domain.com']
-        : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3008'],
-    credentials: true
-}));
+// CORS configuration - allow iframe embedding from various origins
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin) {
+            return callback(null, true);
+        }
+        // In production, check against allowed origins
+        if (process.env.NODE_ENV === 'production') {
+            const allowedOrigins = process.env.ALLOWED_ORIGINS
+                ? process.env.ALLOWED_ORIGINS.split(',')
+                : ['https://your-frontend-domain.com'];
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            }
+            else {
+                // In production, be more restrictive
+                callback(new Error('Not allowed by CORS'));
+            }
+        }
+        else {
+            // In development, allow all origins for easier testing
+            callback(null, true);
+        }
+    },
+    credentials: true,
+    optionsSuccessStatus: 200 // For legacy browser support
+};
+app.use((0, cors_1.default)(corsOptions));
+// Iframe-friendly headers middleware (allows embedding)
+app.use(iframeHeaders_1.iframeHeaders);
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Health check endpoint

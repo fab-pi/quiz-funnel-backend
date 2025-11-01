@@ -1,10 +1,6 @@
 export interface SessionStartRequest {
   quiz_id: string;
-  utm_source?: string;
-  utm_campaign?: string;
-  utm_medium?: string;
-  utm_term?: string;
-  utm_content?: string;
+  utm_params?: Record<string, string>;
 }
 
 export interface SessionStartResponse {
@@ -39,11 +35,7 @@ export interface UserSession {
   quiz_id: string;
   last_question_viewed: number;
   is_completed: boolean;
-  utm_source?: string;
-  utm_campaign?: string;
-  utm_medium?: string;
-  utm_term?: string;
-  utm_content?: string;
+  utm_params?: Record<string, string>;
   final_profile?: string;
   created_at: Date;
   updated_at: Date;

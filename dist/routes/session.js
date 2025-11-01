@@ -14,6 +14,7 @@ console.log('  - POST /session/start');
 console.log('  - POST /session/update');
 console.log('  - POST /session/answers');
 console.log('  - POST /session/complete');
+console.log('  - GET /session/:sessionId/utms');
 // POST /session/start
 router.post('/session/start', async (req, res) => {
     try {
@@ -96,6 +97,39 @@ router.post('/session/complete', async (req, res) => {
     }
     catch (error) {
         console.error('❌ Error in session completion:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
+        });
+    }
+});
+// GET /session/:sessionId/utms
+router.get('/session/:sessionId/utms', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        // Validate required fields
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'sessionId is required'
+            });
+        }
+        const utmParams = await sessionService.getSessionUTMParams(sessionId);
+        if (utmParams === null) {
+            return res.status(200).json({
+                success: true,
+                data: null,
+                message: 'No UTM parameters found for this session'
+            });
+        }
+        res.status(200).json({
+            success: true,
+            data: utmParams,
+            message: 'UTM parameters retrieved successfully'
+        });
+    }
+    catch (error) {
+        console.error('❌ Error fetching UTM params:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Internal server error'

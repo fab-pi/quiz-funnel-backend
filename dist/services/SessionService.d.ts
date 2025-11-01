@@ -22,5 +22,10 @@ export declare class SessionService extends BaseService {
         success: boolean;
         message: string;
     }>;
+    /**
+     * Get UTM parameters for a session
+     * Used to retrieve stored UTM params for appending to redirect URLs
+     */
+    getSessionUTMParams(sessionId: string): Promise<Record<string, string> | null>;
 }
 //# sourceMappingURL=SessionService.d.ts.map

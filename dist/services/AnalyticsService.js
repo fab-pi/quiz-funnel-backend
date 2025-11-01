@@ -52,8 +52,8 @@ class AnalyticsService extends BaseService_1.BaseService {
         try {
             const result = await client.query(`
         SELECT 
-          COALESCE(utm_source, 'Direct') as utm_source,
-          COALESCE(utm_campaign, 'N/A') as utm_campaign,
+          COALESCE(utm_params->>'utm_source', 'Direct') as utm_source,
+          COALESCE(utm_params->>'utm_campaign', 'N/A') as utm_campaign,
           COUNT(session_id) as total_sessions,
           ROUND(
             COUNT(CASE WHEN is_completed = true THEN 1 END)::numeric / COUNT(session_id)::numeric * 100, 
@@ -61,7 +61,7 @@ class AnalyticsService extends BaseService_1.BaseService {
           ) as completion_rate
         FROM user_sessions 
         WHERE quiz_id = $1
-        GROUP BY utm_source, utm_campaign
+        GROUP BY utm_params->>'utm_source', utm_params->>'utm_campaign'
         ORDER BY total_sessions DESC
       `, [parseInt(quizId)]);
             console.log(`✅ UTM performance analytics fetched for quiz ${quizId}: ${result.rows.length} sources`);

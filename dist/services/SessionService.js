@@ -12,7 +12,7 @@ class SessionService extends BaseService_1.BaseService {
     async startSession(data) {
         const client = await this.pool.connect();
         try {
-            const { quiz_id, utm_source, utm_campaign, utm_medium, utm_term, utm_content } = data;
+            const { quiz_id, utm_params } = data;
             // Verify quiz exists
             const quizCheck = await client.query('SELECT quiz_id FROM quizzes WHERE quiz_id = $1', [parseInt(quiz_id)]);
             if (quizCheck.rows.length === 0) {
@@ -20,18 +20,21 @@ class SessionService extends BaseService_1.BaseService {
             }
             // Generate session ID using improved method
             const sessionId = this.generateUniqueId();
+            // Convert utm_params to JSONB for PostgreSQL
+            // If utm_params is provided and not empty, stringify it; otherwise use null
+            const utmParamsJsonb = utm_params && Object.keys(utm_params).length > 0
+                ? JSON.stringify(utm_params)
+                : null;
             // Insert new session
             await client.query(`INSERT INTO user_sessions 
-         (session_id, quiz_id, start_timestamp, last_question_viewed, is_completed, utm_source, utm_medium, utm_campaign)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [
+         (session_id, quiz_id, start_timestamp, last_question_viewed, is_completed, utm_params)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb)`, [
                 sessionId,
                 parseInt(quiz_id),
                 new Date(),
                 null,
                 false,
-                utm_source || null,
-                utm_medium || null,
-                utm_campaign || null
+                utmParamsJsonb
             ]);
             console.log(`✅ Session started with ID: ${sessionId}`);
             return {
@@ -128,6 +131,42 @@ class SessionService extends BaseService_1.BaseService {
         }
         catch (error) {
             console.error('❌ Error completing session:', error);
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+    /**
+     * Get UTM parameters for a session
+     * Used to retrieve stored UTM params for appending to redirect URLs
+     */
+    async getSessionUTMParams(sessionId) {
+        const client = await this.pool.connect();
+        try {
+            // Query utm_params from user_sessions
+            const result = await client.query('SELECT utm_params FROM user_sessions WHERE session_id = $1', [parseInt(sessionId)]);
+            if (result.rows.length === 0) {
+                console.log(`⚠️ Session ${sessionId} not found`);
+                return null;
+            }
+            const utmParams = result.rows[0].utm_params;
+            // If utm_params is null or empty, return null
+            if (!utmParams || typeof utmParams !== 'object') {
+                return null;
+            }
+            // PostgreSQL JSONB is automatically parsed to object by pg driver
+            // Convert to Record<string, string> format
+            const utmParamsRecord = {};
+            for (const [key, value] of Object.entries(utmParams)) {
+                if (typeof value === 'string') {
+                    utmParamsRecord[key] = value;
+                }
+            }
+            return Object.keys(utmParamsRecord).length > 0 ? utmParamsRecord : null;
+        }
+        catch (error) {
+            console.error('❌ Error fetching UTM params:', error);
             throw error;
         }
         finally {
