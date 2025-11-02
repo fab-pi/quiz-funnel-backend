@@ -10,10 +10,11 @@ console.log('🔧 Defining analytics routes:');
 console.log('  - GET /analytics/drop-rate/:quizId');
 console.log('  - GET /analytics/utm-performance/:quizId');
 
-// GET /analytics/drop-rate/:quizId
+// GET /analytics/drop-rate/:quizId?includeArchived=true
 router.get('/analytics/drop-rate/:quizId', async (req: Request, res: Response) => {
   try {
     const { quizId } = req.params;
+    const includeArchived = req.query.includeArchived === 'true';
 
     // Validate quiz ID
     if (!quizId || isNaN(parseInt(quizId))) {
@@ -23,7 +24,7 @@ router.get('/analytics/drop-rate/:quizId', async (req: Request, res: Response) =
       });
     }
 
-    const result = await analyticsService.getDropRateAnalytics(quizId);
+    const result = await analyticsService.getDropRateAnalytics(quizId, includeArchived);
     res.status(200).json({
       success: true,
       data: result

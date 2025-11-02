@@ -36,6 +36,7 @@ export class AdminService extends BaseService {
         FROM quizzes q
         LEFT JOIN user_sessions us ON q.quiz_id = us.quiz_id
         LEFT JOIN questions qu ON q.quiz_id = qu.quiz_id
+          AND (qu.is_archived = false OR qu.is_archived IS NULL)
         GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active
         ORDER BY q.quiz_id DESC
       `);

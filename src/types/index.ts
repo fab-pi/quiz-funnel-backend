@@ -43,12 +43,14 @@ export interface UserSession {
 
 // Quiz Creation API Types
 export interface QuizCreationOption {
+  option_id?: number; // Present when updating existing option
   option_text: string;
   associated_value: string;
   option_image_url?: string | null;
 }
 
 export interface QuizCreationQuestion {
+  question_id?: number; // Present when updating existing question
   sequence_order: number;
   question_text: string;
   interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen';

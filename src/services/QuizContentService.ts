@@ -29,7 +29,7 @@ export class QuizContentService extends BaseService {
         throw new Error('Quiz is not active');
       }
 
-      // Get questions and options
+      // Get questions and options (only active, not archived)
       const questionsResult = await client.query(`
         SELECT 
           q.question_id,
@@ -46,7 +46,9 @@ export class QuizContentService extends BaseService {
           ao.option_image_url
         FROM questions q
         LEFT JOIN answer_options ao ON q.question_id = ao.question_id
+          AND (ao.is_archived = false OR ao.is_archived IS NULL)
         WHERE q.quiz_id = $1
+          AND (q.is_archived = false OR q.is_archived IS NULL)
         ORDER BY q.sequence_order, ao.option_id
       `, [parseInt(quizId)]);
 

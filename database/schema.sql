@@ -36,7 +36,8 @@ CREATE TABLE questions (
     interaction_type VARCHAR(50) NOT NULL,
     instructions_text VARCHAR(500),
     loader_text VARCHAR(500),
-    popup_question TEXT
+    popup_question TEXT,
+    is_archived BOOLEAN DEFAULT false
 );
 
 -- Create answer_options table
@@ -45,7 +46,8 @@ CREATE TABLE answer_options (
     question_id INTEGER NOT NULL REFERENCES questions(question_id) ON DELETE CASCADE,
     option_text VARCHAR(500) NOT NULL,
     associated_value VARCHAR(100) NOT NULL,
-    option_image_url VARCHAR(500)
+    option_image_url VARCHAR(500),
+    is_archived BOOLEAN DEFAULT false
 );
 
 -- Create user_sessions table
@@ -72,6 +74,10 @@ CREATE TABLE user_answers (
 CREATE INDEX idx_questions_quiz_id ON questions(quiz_id);
 CREATE INDEX idx_questions_sequence_order ON questions(sequence_order);
 CREATE INDEX idx_answer_options_question_id ON answer_options(question_id);
+
+-- Indexes for soft delete (is_archived) filtering
+CREATE INDEX idx_questions_is_archived ON questions(is_archived) WHERE is_archived = false;
+CREATE INDEX idx_answer_options_is_archived ON answer_options(is_archived) WHERE is_archived = false;
 CREATE INDEX idx_user_sessions_quiz_id ON user_sessions(quiz_id);
 CREATE INDEX idx_user_sessions_start_timestamp ON user_sessions(start_timestamp);
 CREATE INDEX idx_user_sessions_utm_params ON user_sessions USING GIN (utm_params);
@@ -79,9 +85,16 @@ CREATE INDEX idx_user_answers_session_id ON user_answers(session_id);
 CREATE INDEX idx_user_answers_question_id ON user_answers(question_id);
 
 -- Add constraints
-ALTER TABLE questions ADD CONSTRAINT unique_quiz_sequence UNIQUE (quiz_id, sequence_order);
+-- Note: unique_quiz_sequence constraint is replaced by partial unique index
+-- that only applies to non-archived questions (see below)
 ALTER TABLE user_sessions ADD CONSTRAINT check_session_id_positive CHECK (session_id > 0);
 ALTER TABLE user_answers ADD CONSTRAINT check_answer_id_positive CHECK (answer_id > 0);
+
+-- Partial unique index for sequence_order (only applies to active questions)
+-- This allows archived questions to have duplicate sequence_order values
+CREATE UNIQUE INDEX unique_active_quiz_sequence 
+ON questions(quiz_id, sequence_order) 
+WHERE is_archived = false OR is_archived IS NULL;
 
 -- Add comments for documentation
 COMMENT ON TABLE quizzes IS 'Stores quiz definitions and configuration';

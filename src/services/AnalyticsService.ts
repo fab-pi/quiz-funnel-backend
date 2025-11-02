@@ -9,10 +9,15 @@ export class AnalyticsService extends BaseService {
   /**
    * Get drop rate analytics
    */
-  async getDropRateAnalytics(quizId: string): Promise<any[]> {
+  async getDropRateAnalytics(quizId: string, includeArchived: boolean = false): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
+      // Filter by is_archived unless explicitly including archived questions
+      const archiveFilter = includeArchived 
+        ? '' 
+        : 'AND (q.is_archived = false OR q.is_archived IS NULL)';
+      
       const result = await client.query(`
         SELECT 
           q.question_id,
@@ -30,7 +35,7 @@ export class AnalyticsService extends BaseService {
           AND (us.last_question_viewed >= q.question_id OR us.last_question_viewed IS NULL)
         LEFT JOIN user_answers ua ON ua.session_id = us.session_id 
           AND ua.question_id = q.question_id
-        WHERE q.quiz_id = $1
+        WHERE q.quiz_id = $1 ${archiveFilter}
         GROUP BY q.question_id, q.question_text, q.sequence_order
         ORDER BY q.sequence_order
       `, [parseInt(quizId)]);
