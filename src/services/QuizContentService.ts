@@ -40,6 +40,8 @@ export class QuizContentService extends BaseService {
           q.instructions_text,
           q.loader_text,
           q.popup_question,
+          q.educational_box_title,
+          q.educational_box_text,
           ao.option_id,
           ao.option_text,
           ao.associated_value,
@@ -66,6 +68,8 @@ export class QuizContentService extends BaseService {
             instructions_text: row.instructions_text,
             loader_text: row.loader_text,
             popup_question: row.popup_question,
+            educational_box_title: row.educational_box_title,
+            educational_box_text: row.educational_box_text,
             options: []
           });
         }

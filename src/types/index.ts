@@ -58,6 +58,8 @@ export interface QuizCreationQuestion {
   instructions_text?: string | null;
   loader_text?: string | null;
   popup_question?: string | null;
+  educational_box_title?: string | null;
+  educational_box_text?: string | null;
   options: QuizCreationOption[];
 }
 
