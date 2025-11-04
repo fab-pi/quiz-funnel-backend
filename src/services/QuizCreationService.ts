@@ -74,9 +74,10 @@ export class QuizCreationService extends BaseService {
             instructions_text,
             loader_text,
             popup_question,
+            loader_bars,
             educational_box_title,
             educational_box_text
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           RETURNING question_id
         `, [
           quizId,
@@ -87,6 +88,7 @@ export class QuizCreationService extends BaseService {
           question.instructions_text || null,
           question.loader_text || null,
           question.popup_question || null,
+          question.loader_bars ? JSON.stringify(question.loader_bars) : null,
           question.educational_box_title || null,
           question.educational_box_text || null
         ]);
@@ -208,6 +210,7 @@ export class QuizCreationService extends BaseService {
           q.instructions_text,
           q.loader_text,
           q.popup_question,
+          q.loader_bars,
           q.educational_box_title,
           q.educational_box_text,
           ao.option_id,
@@ -236,6 +239,7 @@ export class QuizCreationService extends BaseService {
             instructions_text: row.instructions_text,
             loader_text: row.loader_text,
             popup_question: row.popup_question,
+            loader_bars: row.loader_bars,
             educational_box_title: row.educational_box_title,
             educational_box_text: row.educational_box_text,
             options: []
@@ -413,7 +417,23 @@ export class QuizCreationService extends BaseService {
         }
       }
 
-      // NOW process questions from payload (after archiving removed ones)
+      // CRITICAL: Temporarily move existing questions' sequence_order to negative values
+      // This prevents conflicts when inserting new questions with sequence_order that might
+      // conflict with existing questions that haven't been updated yet
+      const existingQuestionsToUpdate = data.questions.filter(
+        q => q.question_id && existingQuestionIds.has(q.question_id)
+      );
+      
+      for (const question of existingQuestionsToUpdate) {
+        // Move to temporary negative sequence_order to free up the target sequence_order
+        await client.query(
+          'UPDATE questions SET sequence_order = $1 WHERE question_id = $2',
+          [-(question.question_id || 0), question.question_id]
+        );
+      }
+      console.log(`✅ Temporarily moved ${existingQuestionsToUpdate.length} existing questions to negative sequence_order`);
+
+      // NOW process questions from payload (after archiving removed ones and moving existing ones)
       const updatedQuestions = [];
 
       for (const question of data.questions) {
@@ -465,10 +485,11 @@ export class QuizCreationService extends BaseService {
               instructions_text = $5,
               loader_text = $6,
               popup_question = $7,
-              educational_box_title = $8,
-              educational_box_text = $9,
+              loader_bars = $8,
+              educational_box_title = $9,
+              educational_box_text = $10,
               is_archived = false
-            WHERE question_id = $10
+            WHERE question_id = $11
           `, [
             question.sequence_order,
             question.question_text,
@@ -477,6 +498,7 @@ export class QuizCreationService extends BaseService {
             question.instructions_text || null,
             question.loader_text || null,
             question.popup_question || null,
+            question.loader_bars ? JSON.stringify(question.loader_bars) : null,
             question.educational_box_title || null,
             question.educational_box_text || null,
             questionId
@@ -494,10 +516,11 @@ export class QuizCreationService extends BaseService {
               instructions_text,
               loader_text,
               popup_question,
+              loader_bars,
               educational_box_title,
               educational_box_text,
               is_archived
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
             RETURNING question_id
           `, [
             quizId,
@@ -508,6 +531,7 @@ export class QuizCreationService extends BaseService {
             question.instructions_text || null,
             question.loader_text || null,
             question.popup_question || null,
+            question.loader_bars ? JSON.stringify(question.loader_bars) : null,
             question.educational_box_title || null,
             question.educational_box_text || null
           ]);

@@ -49,6 +49,14 @@ export interface QuizCreationOption {
   option_image_url?: string | null;
 }
 
+export interface LoaderBar {
+  text_before: string;
+  text_after: string;
+  popup_header: string;
+  popup_question: string;
+  order: number;
+}
+
 export interface QuizCreationQuestion {
   question_id?: number; // Present when updating existing question
   sequence_order: number;
@@ -58,6 +66,7 @@ export interface QuizCreationQuestion {
   instructions_text?: string | null;
   loader_text?: string | null;
   popup_question?: string | null;
+  loader_bars?: LoaderBar[] | null;
   educational_box_title?: string | null;
   educational_box_text?: string | null;
   options: QuizCreationOption[];

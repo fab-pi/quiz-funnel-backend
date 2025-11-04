@@ -40,6 +40,7 @@ export class QuizContentService extends BaseService {
           q.instructions_text,
           q.loader_text,
           q.popup_question,
+          q.loader_bars,
           q.educational_box_title,
           q.educational_box_text,
           ao.option_id,
@@ -68,6 +69,7 @@ export class QuizContentService extends BaseService {
             instructions_text: row.instructions_text,
             loader_text: row.loader_text,
             popup_question: row.popup_question,
+            loader_bars: row.loader_bars,
             educational_box_title: row.educational_box_title,
             educational_box_text: row.educational_box_text,
             options: []
