@@ -57,16 +57,32 @@ export interface LoaderBar {
   order: number;
 }
 
+export interface InsightCard {
+  icon_name: string;
+  title: string;
+  value: string;
+}
+
+export interface ResultPageConfig {
+  section_title: string;
+  explanation_box: {
+    title: string;
+    text: string;
+  };
+  insight_cards: InsightCard[];
+}
+
 export interface QuizCreationQuestion {
   question_id?: number; // Present when updating existing question
   sequence_order: number;
   question_text: string;
-  interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen';
+  interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen' | 'result_page';
   image_url?: string | null;
   instructions_text?: string | null;
   loader_text?: string | null;
   popup_question?: string | null;
   loader_bars?: LoaderBar[] | null;
+  result_page_config?: ResultPageConfig | null;
   educational_box_title?: string | null;
   educational_box_text?: string | null;
   options: QuizCreationOption[];
