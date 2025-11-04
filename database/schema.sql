@@ -38,6 +38,7 @@ CREATE TABLE questions (
     loader_text VARCHAR(500),
     popup_question TEXT,
     loader_bars JSONB,
+    result_page_config JSONB,
     educational_box_title VARCHAR(500),
     educational_box_text TEXT,
     is_archived BOOLEAN DEFAULT false

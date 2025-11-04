@@ -75,9 +75,10 @@ export class QuizCreationService extends BaseService {
             loader_text,
             popup_question,
             loader_bars,
+            result_page_config,
             educational_box_title,
             educational_box_text
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           RETURNING question_id
         `, [
           quizId,
@@ -89,6 +90,7 @@ export class QuizCreationService extends BaseService {
           question.loader_text || null,
           question.popup_question || null,
           question.loader_bars ? JSON.stringify(question.loader_bars) : null,
+          question.result_page_config ? JSON.stringify(question.result_page_config) : null,
           question.educational_box_title || null,
           question.educational_box_text || null
         ]);
@@ -211,6 +213,7 @@ export class QuizCreationService extends BaseService {
           q.loader_text,
           q.popup_question,
           q.loader_bars,
+          q.result_page_config,
           q.educational_box_title,
           q.educational_box_text,
           ao.option_id,
@@ -240,6 +243,7 @@ export class QuizCreationService extends BaseService {
             loader_text: row.loader_text,
             popup_question: row.popup_question,
             loader_bars: row.loader_bars,
+            result_page_config: row.result_page_config,
             educational_box_title: row.educational_box_title,
             educational_box_text: row.educational_box_text,
             options: []
@@ -486,10 +490,11 @@ export class QuizCreationService extends BaseService {
               loader_text = $6,
               popup_question = $7,
               loader_bars = $8,
-              educational_box_title = $9,
-              educational_box_text = $10,
+              result_page_config = $9,
+              educational_box_title = $10,
+              educational_box_text = $11,
               is_archived = false
-            WHERE question_id = $11
+            WHERE question_id = $12
           `, [
             question.sequence_order,
             question.question_text,
@@ -499,6 +504,7 @@ export class QuizCreationService extends BaseService {
             question.loader_text || null,
             question.popup_question || null,
             question.loader_bars ? JSON.stringify(question.loader_bars) : null,
+            question.result_page_config ? JSON.stringify(question.result_page_config) : null,
             question.educational_box_title || null,
             question.educational_box_text || null,
             questionId
@@ -517,10 +523,11 @@ export class QuizCreationService extends BaseService {
               loader_text,
               popup_question,
               loader_bars,
+              result_page_config,
               educational_box_title,
               educational_box_text,
               is_archived
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false)
             RETURNING question_id
           `, [
             quizId,
@@ -532,6 +539,7 @@ export class QuizCreationService extends BaseService {
             question.loader_text || null,
             question.popup_question || null,
             question.loader_bars ? JSON.stringify(question.loader_bars) : null,
+            question.result_page_config ? JSON.stringify(question.result_page_config) : null,
             question.educational_box_title || null,
             question.educational_box_text || null
           ]);
