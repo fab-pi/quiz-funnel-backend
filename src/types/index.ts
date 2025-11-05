@@ -75,7 +75,7 @@ export interface ResultPageConfig {
 export interface QuizCreationQuestion {
   question_id?: number; // Present when updating existing question
   sequence_order: number;
-  question_text: string;
+  question_text: string | null; // Optional for info_screen, required for other types
   interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen' | 'result_page';
   image_url?: string | null;
   instructions_text?: string | null;
@@ -118,7 +118,7 @@ export interface QuizCreationResponse {
       questions: Array<{
         question_id: number;
         sequence_order: number;
-        question_text: string;
+        question_text: string | null; // Optional for info_screen
         interaction_type: string;
         image_url?: string | null;
         options: Array<{

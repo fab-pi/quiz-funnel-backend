@@ -83,7 +83,7 @@ export class QuizCreationService extends BaseService {
         `, [
           quizId,
           question.sequence_order,
-          question.question_text,
+          question.question_text || null,
           question.interaction_type,
           question.image_url || null,
           question.instructions_text || null,
@@ -497,7 +497,7 @@ export class QuizCreationService extends BaseService {
             WHERE question_id = $12
           `, [
             question.sequence_order,
-            question.question_text,
+            question.question_text || null,
             question.interaction_type,
             question.image_url || null,
             question.instructions_text || null,

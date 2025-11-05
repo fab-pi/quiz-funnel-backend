@@ -40,18 +40,30 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
 
     // Validate questions structure
     for (const question of data.questions) {
-      if (!question.question_text || !question.interaction_type) {
+      // Validate interaction_type (required for all)
+      if (!question.interaction_type) {
         return res.status(400).json({
           success: false,
-          message: 'Each question must have question_text and interaction_type'
+          message: 'Each question must have interaction_type'
         });
       }
+
+      // Validate question_text (required for all except info_screen)
+      if (question.interaction_type !== 'info_screen' && (!question.question_text || question.question_text.trim().length === 0)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each question must have question_text (except info_screen)'
+        });
+      }
+
+      // Helper for question label in error messages
+      const questionLabel = question.question_text || `Question (${question.interaction_type})`;
 
       // Validate question image URL if provided
       if (question.image_url && !cloudinaryService.isValidCloudinaryUrl(question.image_url)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid image_url format for question "${question.question_text}". Must be a valid Cloudinary URL.`
+          message: `Invalid image_url format for question "${questionLabel}". Must be a valid Cloudinary URL.`
         });
       }
 
@@ -60,7 +72,7 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
         if (!question.options || !Array.isArray(question.options)) {
           return res.status(400).json({
             success: false,
-            message: `Question "${question.question_text}" must have an options array`
+            message: `Question "${questionLabel}" must have an options array`
           });
         }
 
@@ -145,18 +157,30 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
 
     // Validate questions structure
     for (const question of data.questions) {
-      if (!question.question_text || !question.interaction_type) {
+      // Validate interaction_type (required for all)
+      if (!question.interaction_type) {
         return res.status(400).json({
           success: false,
-          message: 'Each question must have question_text and interaction_type'
+          message: 'Each question must have interaction_type'
         });
       }
+
+      // Validate question_text (required for all except info_screen)
+      if (question.interaction_type !== 'info_screen' && (!question.question_text || question.question_text.trim().length === 0)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each question must have question_text (except info_screen)'
+        });
+      }
+
+      // Helper for question label in error messages
+      const questionLabel = question.question_text || `Question (${question.interaction_type})`;
 
       // Validate question image URL if provided
       if (question.image_url && !cloudinaryService.isValidCloudinaryUrl(question.image_url)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid image_url format for question "${question.question_text}". Must be a valid Cloudinary URL.`
+          message: `Invalid image_url format for question "${questionLabel}". Must be a valid Cloudinary URL.`
         });
       }
 
@@ -165,7 +189,7 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
         if (!question.options || !Array.isArray(question.options)) {
           return res.status(400).json({
             success: false,
-            message: `Question "${question.question_text}" must have an options array`
+            message: `Question "${questionLabel}" must have an options array`
           });
         }
 
