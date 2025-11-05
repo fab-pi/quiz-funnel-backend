@@ -31,7 +31,7 @@ CREATE TABLE questions (
     question_id SERIAL PRIMARY KEY,
     quiz_id INTEGER NOT NULL REFERENCES quizzes(quiz_id) ON DELETE CASCADE,
     sequence_order INTEGER NOT NULL,
-    question_text TEXT NOT NULL,
+    question_text TEXT, -- Optional for info_screen, required for other types
     image_url VARCHAR(500),
     interaction_type VARCHAR(50) NOT NULL,
     instructions_text VARCHAR(500),
