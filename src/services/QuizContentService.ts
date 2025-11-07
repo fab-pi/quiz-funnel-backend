@@ -42,6 +42,7 @@ export class QuizContentService extends BaseService {
           q.popup_question,
           q.loader_bars,
           q.result_page_config,
+          q.timeline_projection_config,
           q.educational_box_title,
           q.educational_box_text,
           ao.option_id,
@@ -72,6 +73,7 @@ export class QuizContentService extends BaseService {
             popup_question: row.popup_question,
             loader_bars: row.loader_bars,
             result_page_config: row.result_page_config,
+            timeline_projection_config: row.timeline_projection_config,
             educational_box_title: row.educational_box_title,
             educational_box_text: row.educational_box_text,
             options: []

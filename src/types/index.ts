@@ -72,17 +72,23 @@ export interface ResultPageConfig {
   insight_cards: InsightCard[];
 }
 
+export interface TimelineProjectionConfig {
+  direction: 'ascendent' | 'descendent';
+  months_count: number; // Number of months to add to current date for target date
+}
+
 export interface QuizCreationQuestion {
   question_id?: number; // Present when updating existing question
   sequence_order: number;
   question_text: string | null; // Optional for info_screen, required for other types
-  interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen' | 'result_page';
+  interaction_type: 'single_choice' | 'multiple_choice' | 'text_input' | 'image_card' | 'fake_loader' | 'info_screen' | 'result_page' | 'timeline_projection';
   image_url?: string | null;
   instructions_text?: string | null;
   loader_text?: string | null;
   popup_question?: string | null;
   loader_bars?: LoaderBar[] | null;
   result_page_config?: ResultPageConfig | null;
+  timeline_projection_config?: TimelineProjectionConfig | null;
   educational_box_title?: string | null;
   educational_box_text?: string | null;
   options: QuizCreationOption[];

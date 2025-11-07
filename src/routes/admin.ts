@@ -67,8 +67,8 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
         });
       }
 
-      // Options validation (skip for fake_loader and info_screen)
-      if (question.interaction_type !== 'fake_loader' && question.interaction_type !== 'info_screen') {
+      // Options validation (skip for fake_loader, info_screen, result_page, and timeline_projection)
+      if (question.interaction_type !== 'fake_loader' && question.interaction_type !== 'info_screen' && question.interaction_type !== 'result_page' && question.interaction_type !== 'timeline_projection') {
         if (!question.options || !Array.isArray(question.options)) {
           return res.status(400).json({
             success: false,
@@ -101,6 +101,31 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
             message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid Cloudinary URL.`
           });
         }
+        }
+      }
+
+      // Validate timeline_projection_config if interaction_type is timeline_projection
+      if (question.interaction_type === 'timeline_projection') {
+        if (!question.timeline_projection_config) {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}" must have timeline_projection_config`
+          });
+        }
+
+        const config = question.timeline_projection_config;
+        if (config.direction !== 'ascendent' && config.direction !== 'descendent') {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}": timeline_projection_config.direction must be "ascendent" or "descendent"`
+          });
+        }
+
+        if (typeof config.months_count !== 'number' || config.months_count < 1 || config.months_count > 60) {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}": timeline_projection_config.months_count must be a number between 1 and 60`
+          });
         }
       }
     }
@@ -184,8 +209,8 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
         });
       }
 
-      // Options validation (skip for fake_loader and info_screen)
-      if (question.interaction_type !== 'fake_loader' && question.interaction_type !== 'info_screen') {
+      // Options validation (skip for fake_loader, info_screen, result_page, and timeline_projection)
+      if (question.interaction_type !== 'fake_loader' && question.interaction_type !== 'info_screen' && question.interaction_type !== 'result_page' && question.interaction_type !== 'timeline_projection') {
         if (!question.options || !Array.isArray(question.options)) {
           return res.status(400).json({
             success: false,
@@ -218,6 +243,31 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
               message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid Cloudinary URL.`
             });
           }
+        }
+      }
+
+      // Validate timeline_projection_config if interaction_type is timeline_projection
+      if (question.interaction_type === 'timeline_projection') {
+        if (!question.timeline_projection_config) {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}" must have timeline_projection_config`
+          });
+        }
+
+        const config = question.timeline_projection_config;
+        if (config.direction !== 'ascendent' && config.direction !== 'descendent') {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}": timeline_projection_config.direction must be "ascendent" or "descendent"`
+          });
+        }
+
+        if (typeof config.months_count !== 'number' || config.months_count < 1 || config.months_count > 60) {
+          return res.status(400).json({
+            success: false,
+            message: `Question "${questionLabel}": timeline_projection_config.months_count must be a number between 1 and 60`
+          });
         }
       }
     }

@@ -76,9 +76,10 @@ export class QuizCreationService extends BaseService {
             popup_question,
             loader_bars,
             result_page_config,
+            timeline_projection_config,
             educational_box_title,
             educational_box_text
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
           RETURNING question_id
         `, [
           quizId,
@@ -91,6 +92,7 @@ export class QuizCreationService extends BaseService {
           question.popup_question || null,
           question.loader_bars ? JSON.stringify(question.loader_bars) : null,
           question.result_page_config ? JSON.stringify(question.result_page_config) : null,
+          question.timeline_projection_config ? JSON.stringify(question.timeline_projection_config) : null,
           question.educational_box_title || null,
           question.educational_box_text || null
         ]);
@@ -214,6 +216,7 @@ export class QuizCreationService extends BaseService {
           q.popup_question,
           q.loader_bars,
           q.result_page_config,
+          q.timeline_projection_config,
           q.educational_box_title,
           q.educational_box_text,
           ao.option_id,
@@ -244,6 +247,7 @@ export class QuizCreationService extends BaseService {
             popup_question: row.popup_question,
             loader_bars: row.loader_bars,
             result_page_config: row.result_page_config,
+            timeline_projection_config: row.timeline_projection_config,
             educational_box_title: row.educational_box_title,
             educational_box_text: row.educational_box_text,
             options: []
@@ -491,10 +495,11 @@ export class QuizCreationService extends BaseService {
               popup_question = $7,
               loader_bars = $8,
               result_page_config = $9,
-              educational_box_title = $10,
-              educational_box_text = $11,
+              timeline_projection_config = $10,
+              educational_box_title = $11,
+              educational_box_text = $12,
               is_archived = false
-            WHERE question_id = $12
+            WHERE question_id = $13
           `, [
             question.sequence_order,
             question.question_text || null,
@@ -505,6 +510,7 @@ export class QuizCreationService extends BaseService {
             question.popup_question || null,
             question.loader_bars ? JSON.stringify(question.loader_bars) : null,
             question.result_page_config ? JSON.stringify(question.result_page_config) : null,
+            question.timeline_projection_config ? JSON.stringify(question.timeline_projection_config) : null,
             question.educational_box_title || null,
             question.educational_box_text || null,
             questionId
@@ -524,10 +530,11 @@ export class QuizCreationService extends BaseService {
               popup_question,
               loader_bars,
               result_page_config,
+              timeline_projection_config,
               educational_box_title,
               educational_box_text,
               is_archived
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, false)
             RETURNING question_id
           `, [
             quizId,
@@ -540,6 +547,7 @@ export class QuizCreationService extends BaseService {
             question.popup_question || null,
             question.loader_bars ? JSON.stringify(question.loader_bars) : null,
             question.result_page_config ? JSON.stringify(question.result_page_config) : null,
+            question.timeline_projection_config ? JSON.stringify(question.timeline_projection_config) : null,
             question.educational_box_title || null,
             question.educational_box_text || null
           ]);
