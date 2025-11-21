@@ -9,17 +9,19 @@ export class QuizCreationService extends BaseService {
 
   /**
    * Create a new quiz with full structure
+   * @param data - Quiz creation data
+   * @param userId - ID of the user creating the quiz (from authenticated user)
    */
-  async createQuiz(data: QuizCreationRequest): Promise<QuizCreationResponse> {
+  async createQuiz(data: QuizCreationRequest, userId: number): Promise<QuizCreationResponse> {
     const client = await this.pool.connect();
     
     try {
       // Start transaction
       await client.query('BEGIN');
 
-      console.log('🔄 Starting quiz creation transaction...');
+      console.log(`🔄 Starting quiz creation transaction for user ${userId}...`);
 
-      // Insert quiz
+      // Insert quiz with user_id
       const quizResult = await client.query(`
         INSERT INTO quizzes (
           quiz_name, 
@@ -30,8 +32,9 @@ export class QuizCreationService extends BaseService {
           color_secondary, 
           color_text_default, 
           color_text_hover,
-          creation_date
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          creation_date,
+          user_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING quiz_id
       `, [
         data.quiz_name,
@@ -42,7 +45,8 @@ export class QuizCreationService extends BaseService {
         data.color_secondary,
         data.color_text_default,
         data.color_text_hover,
-        new Date()
+        new Date(),
+        userId
       ]);
 
       const quizId = quizResult.rows[0].quiz_id;
@@ -175,12 +179,15 @@ export class QuizCreationService extends BaseService {
 
   /**
    * Get quiz data for editing (includes inactive quizzes)
+   * @param quizId - Quiz ID to fetch
+   * @param userId - ID of the user requesting (for ownership check)
+   * @param userRole - Role of the user ('user' or 'admin')
    */
-  async getQuizForEditing(quizId: number): Promise<any> {
+  async getQuizForEditing(quizId: number, userId: number, userRole: 'user' | 'admin'): Promise<any> {
     const client = await this.pool.connect();
     
     try {
-      // Get quiz info (no is_active check)
+      // Get quiz info with user_id (no is_active check)
       const quizResult = await client.query(
         `SELECT 
           quiz_id, 
@@ -191,7 +198,8 @@ export class QuizCreationService extends BaseService {
           color_primary, 
           color_secondary, 
           color_text_default, 
-          color_text_hover 
+          color_text_hover,
+          user_id
         FROM quizzes 
         WHERE quiz_id = $1`,
         [quizId]
@@ -202,6 +210,11 @@ export class QuizCreationService extends BaseService {
       }
 
       const quiz = quizResult.rows[0];
+
+      // Check ownership (admin can access any quiz, users can only access their own)
+      if (userRole !== 'admin' && quiz.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this quiz');
+      }
 
       // Get questions and options (only active, not archived)
       const questionsResult = await client.query(`
@@ -292,24 +305,35 @@ export class QuizCreationService extends BaseService {
   /**
    * Update an existing quiz with full structure
    * Uses soft delete (is_archived) to preserve historical data
+   * @param quizId - Quiz ID to update
+   * @param data - Quiz update data
+   * @param userId - ID of the user updating (for ownership check)
+   * @param userRole - Role of the user ('user' or 'admin')
    */
-  async updateQuiz(quizId: number, data: QuizCreationRequest): Promise<QuizCreationResponse> {
+  async updateQuiz(quizId: number, data: QuizCreationRequest, userId: number, userRole: 'user' | 'admin'): Promise<QuizCreationResponse> {
     const client = await this.pool.connect();
     
     try {
       // Start transaction
       await client.query('BEGIN');
 
-      console.log(`🔄 Starting quiz update transaction for quiz ID: ${quizId}...`);
+      console.log(`🔄 Starting quiz update transaction for quiz ID: ${quizId} by user ${userId}...`);
 
-      // Verify quiz exists
+      // Verify quiz exists and check ownership
       const quizCheckResult = await client.query(
-        'SELECT quiz_id FROM quizzes WHERE quiz_id = $1',
+        'SELECT quiz_id, user_id FROM quizzes WHERE quiz_id = $1',
         [quizId]
       );
 
       if (quizCheckResult.rows.length === 0) {
         throw new Error('Quiz not found');
+      }
+
+      const quiz = quizCheckResult.rows[0];
+
+      // Check ownership (admin can update any quiz, users can only update their own)
+      if (userRole !== 'admin' && quiz.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this quiz');
       }
 
       // VALIDATION 1: Check that sequence_order values are unique (only among active questions)

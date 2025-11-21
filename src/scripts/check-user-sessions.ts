@@ -19,17 +19,18 @@ const checkUserSessions = async () => {
 
     // Try to insert a test session
     console.log('\nTesting session insertion...');
+    const testSessionId = '550e8400-e29b-41d4-a716-446655440000'; // Test UUID
     const testResult = await pool.query(`
       INSERT INTO user_sessions 
-      (session_id, quiz_id, last_question_viewed, is_completed, utm_source)
-      VALUES ($1, $2, $3, $4, $5)
+      (session_id, quiz_id, last_question_viewed, is_completed, utm_params)
+      VALUES ($1, $2, $3, $4, $5::jsonb)
       RETURNING session_id
-    `, ['test-session-123', 1, 0, false, 'test']);
+    `, [testSessionId, 1, 0, false, JSON.stringify({ utm_source: 'test' })]);
 
     console.log('✓ Test session inserted:', testResult.rows[0].session_id);
 
     // Clean up test data
-    await pool.query('DELETE FROM user_sessions WHERE session_id = $1', ['test-session-123']);
+    await pool.query('DELETE FROM user_sessions WHERE session_id = $1', [testSessionId]);
     console.log('✓ Test data cleaned up');
 
   } catch (error) {

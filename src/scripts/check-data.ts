@@ -18,15 +18,15 @@ const checkData = async () => {
       console.log(`   ID: ${q.question_id} | Quiz: ${q.quiz_id} | Text: ${q.question_text.substring(0, 50)}...`);
     });
     
-    // Check user sessions
-    const sessions = await pool.query('SELECT session_id, quiz_id, start_timestamp FROM user_sessions ORDER BY session_id');
+    // Check user sessions (order by timestamp for better readability with UUIDs)
+    const sessions = await pool.query('SELECT session_id, quiz_id, start_timestamp FROM user_sessions ORDER BY start_timestamp DESC');
     console.log(`\n👥 User Sessions (${sessions.rows.length}):`);
     sessions.rows.forEach(session => {
       console.log(`   Session: ${session.session_id} | Quiz: ${session.quiz_id} | Started: ${session.start_timestamp}`);
     });
     
-    // Check user answers
-    const answers = await pool.query('SELECT answer_id, session_id, question_id FROM user_answers ORDER BY answer_id');
+    // Check user answers (order by timestamp for better readability with UUIDs)
+    const answers = await pool.query('SELECT answer_id, session_id, question_id FROM user_answers ORDER BY answer_timestamp DESC');
     console.log(`\n💬 User Answers (${answers.rows.length}):`);
     answers.rows.forEach(answer => {
       console.log(`   Answer: ${answer.answer_id} | Session: ${answer.session_id} | Question: ${answer.question_id}`);

@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { randomUUID } from 'crypto';
 import { BaseService } from './BaseService';
 import { 
   SessionStartRequest, 
@@ -33,8 +34,8 @@ export class SessionService extends BaseService {
         throw new Error('Quiz not found');
       }
 
-      // Generate session ID using improved method
-      const sessionId = this.generateUniqueId();
+      // Generate session ID as UUID
+      const sessionId = randomUUID();
 
       // Convert utm_params to JSONB for PostgreSQL
       // If utm_params is provided and not empty, stringify it; otherwise use null
@@ -60,7 +61,7 @@ export class SessionService extends BaseService {
       console.log(`✅ Session started with ID: ${sessionId}`);
 
       return {
-        session_id: sessionId.toString(),
+        session_id: sessionId,
         success: true,
         message: 'Session started successfully'
       };
@@ -85,7 +86,7 @@ export class SessionService extends BaseService {
       // Verify session exists
       const sessionCheck = await client.query(
         'SELECT session_id FROM user_sessions WHERE session_id = $1',
-        [parseInt(sessionId)]
+        [sessionId]
       );
 
       if (sessionCheck.rows.length === 0) {
@@ -95,7 +96,7 @@ export class SessionService extends BaseService {
       // Update session
       await client.query(
         'UPDATE user_sessions SET last_question_viewed = $1 WHERE session_id = $2',
-        [parseInt(lastQuestionId), parseInt(sessionId)]
+        [parseInt(lastQuestionId), sessionId]
       );
 
       console.log(`✅ Session ${sessionId} updated to question ${lastQuestionId}`);
@@ -125,21 +126,21 @@ export class SessionService extends BaseService {
       // Verify session exists
       const sessionCheck = await client.query(
         'SELECT session_id FROM user_sessions WHERE session_id = $1',
-        [parseInt(sessionId)]
+        [sessionId]
       );
 
       if (sessionCheck.rows.length === 0) {
         throw new Error('Session not found');
       }
 
-      // Generate answer ID using improved method
-      const answerId = this.generateUniqueId();
+      // Generate answer ID as UUID
+      const answerId = randomUUID();
 
       // Insert answer
       await client.query(
         `INSERT INTO user_answers (answer_id, session_id, question_id, selected_option_id, answer_timestamp)
          VALUES ($1, $2, $3, $4, $5)`,
-        [answerId, parseInt(sessionId), parseInt(questionId), parseInt(selectedOptionId), new Date()]
+        [answerId, sessionId, parseInt(questionId), parseInt(selectedOptionId), new Date()]
       );
 
       console.log(`✅ Answer submitted with ID: ${answerId}`);
@@ -167,7 +168,7 @@ export class SessionService extends BaseService {
       // Verify session exists
       const sessionCheck = await client.query(
         'SELECT session_id FROM user_sessions WHERE session_id = $1',
-        [parseInt(sessionId)]
+        [sessionId]
       );
 
       if (sessionCheck.rows.length === 0) {
@@ -177,7 +178,7 @@ export class SessionService extends BaseService {
       // Update session to completed
       await client.query(
         'UPDATE user_sessions SET is_completed = true, final_profile = $1 WHERE session_id = $2',
-        ['Completed', parseInt(sessionId)]
+        ['Completed', sessionId]
       );
 
       console.log(`✅ Session ${sessionId} completed`);

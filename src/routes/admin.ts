@@ -1,9 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { QuizCreationService } from '../services/QuizCreationService';
 import { AdminService } from '../services/AdminService';
 import { CloudinaryService } from '../services/CloudinaryService';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
+import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const quizCreationService = new QuizCreationService(pool);
@@ -18,7 +19,8 @@ console.log('  - GET /admin/quiz/:quizId');
 console.log('  - GET /admin/quiz-summary');
 
 // POST /admin/quiz - Create new quiz with full structure
-router.post('/admin/quiz', async (req: Request, res: Response) => {
+// Protected: Requires authentication (user or admin can create quizzes)
+router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const data: QuizCreationRequest = req.body;
 
@@ -130,7 +132,15 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
       }
     }
 
-    const result = await quizCreationService.createQuiz(data);
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const result = await quizCreationService.createQuiz(data, req.user.userId);
     res.status(201).json(result);
 
   } catch (error: any) {
@@ -143,7 +153,8 @@ router.post('/admin/quiz', async (req: Request, res: Response) => {
 });
 
 // PUT /admin/quiz/:quizId - Update existing quiz with full structure
-router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
+// Protected: Requires authentication (user can update own quizzes, admin can update any)
+router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
     const data: QuizCreationRequest = req.body;
@@ -272,7 +283,20 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
       }
     }
 
-    const result = await quizCreationService.updateQuiz(parseInt(quizId), data);
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const result = await quizCreationService.updateQuiz(
+      parseInt(quizId), 
+      data, 
+      req.user.userId, 
+      req.user.role
+    );
     res.status(200).json(result);
 
   } catch (error: any) {
@@ -282,6 +306,14 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         message: 'Quiz not found'
+      });
+    }
+
+    // Handle authorization errors
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
       });
     }
 
@@ -303,7 +335,8 @@ router.put('/admin/quiz/:quizId', async (req: Request, res: Response) => {
 });
 
 // GET /admin/quiz/:quizId - Get quiz data for editing
-router.get('/admin/quiz/:quizId', async (req: Request, res: Response) => {
+// Protected: Requires authentication (user can view own quizzes, admin can view any)
+router.get('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
 
@@ -315,7 +348,19 @@ router.get('/admin/quiz/:quizId', async (req: Request, res: Response) => {
       });
     }
 
-    const quizData = await quizCreationService.getQuizForEditing(parseInt(quizId));
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const quizData = await quizCreationService.getQuizForEditing(
+      parseInt(quizId), 
+      req.user.userId, 
+      req.user.role
+    );
     
     res.status(200).json({
       success: true,
@@ -332,6 +377,14 @@ router.get('/admin/quiz/:quizId', async (req: Request, res: Response) => {
       });
     }
 
+    // Handle authorization errors
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch quiz data for editing'
@@ -339,12 +392,32 @@ router.get('/admin/quiz/:quizId', async (req: Request, res: Response) => {
   }
 });
 
-// GET /admin/quiz-summary - Get summary metrics for all quizzes
-router.get('/admin/quiz-summary', async (req: Request, res: Response) => {
+// GET /admin/quiz-summary - Get summary metrics for quizzes
+// Protected: Requires authentication (user sees own quizzes, admin can see all or own)
+// Query params: ?viewMode=all|my (admin only, defaults to 'all' for admin, 'my' for users)
+router.get('/admin/quiz-summary', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    console.log('📊 Fetching quiz summary metrics...');
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const viewMode = req.query.viewMode as string || 'all';
     
-    const summaryMetrics = await adminService.getQuizSummaryMetrics();
+    // For regular users, always use 'my' (ignore query param for security)
+    const effectiveViewMode = req.user.role === 'admin' ? viewMode : 'my';
+    const showAll = req.user.role === 'admin' && effectiveViewMode === 'all';
+
+    console.log(`📊 Fetching quiz summary metrics for user ${req.user.userId} (viewMode: ${effectiveViewMode})...`);
+    
+    const summaryMetrics = await adminService.getQuizSummaryMetrics(
+      req.user.userId, 
+      req.user.role,
+      showAll
+    );
     
     res.json({
       success: true,

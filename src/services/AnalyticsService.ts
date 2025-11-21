@@ -8,11 +8,37 @@ export class AnalyticsService extends BaseService {
 
   /**
    * Get drop rate analytics
+   * @param quizId - Quiz ID
+   * @param includeArchived - Whether to include archived questions
+   * @param userId - ID of the user requesting (for ownership check)
+   * @param userRole - Role of the user ('user' or 'admin')
    */
-  async getDropRateAnalytics(quizId: string, includeArchived: boolean = false): Promise<any[]> {
+  async getDropRateAnalytics(
+    quizId: string, 
+    includeArchived: boolean = false,
+    userId: number,
+    userRole: 'user' | 'admin'
+  ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
+      // First verify quiz ownership
+      const quizCheck = await client.query(
+        'SELECT user_id FROM quizzes WHERE quiz_id = $1',
+        [parseInt(quizId)]
+      );
+
+      if (quizCheck.rows.length === 0) {
+        throw new Error('Quiz not found');
+      }
+
+      const quiz = quizCheck.rows[0];
+
+      // Check ownership (admin can access any quiz, users can only access their own)
+      if (userRole !== 'admin' && quiz.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this quiz');
+      }
+
       // Filter by is_archived unless explicitly including archived questions
       const archiveFilter = includeArchived 
         ? '' 
@@ -53,11 +79,35 @@ export class AnalyticsService extends BaseService {
 
   /**
    * Get UTM performance analytics
+   * @param quizId - Quiz ID
+   * @param userId - ID of the user requesting (for ownership check)
+   * @param userRole - Role of the user ('user' or 'admin')
    */
-  async getUTMPerformanceAnalytics(quizId: string): Promise<any[]> {
+  async getUTMPerformanceAnalytics(
+    quizId: string,
+    userId: number,
+    userRole: 'user' | 'admin'
+  ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
+      // First verify quiz ownership
+      const quizCheck = await client.query(
+        'SELECT user_id FROM quizzes WHERE quiz_id = $1',
+        [parseInt(quizId)]
+      );
+
+      if (quizCheck.rows.length === 0) {
+        throw new Error('Quiz not found');
+      }
+
+      const quiz = quizCheck.rows[0];
+
+      // Check ownership (admin can access any quiz, users can only access their own)
+      if (userRole !== 'admin' && quiz.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this quiz');
+      }
+
       const result = await client.query(`
         SELECT 
           COALESCE(utm_params->>'utm_source', 'Direct') as utm_source,

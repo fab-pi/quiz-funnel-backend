@@ -6,6 +6,7 @@ import contentRoutes from './routes/content';
 import adminRoutes from './routes/admin';
 import analyticsRoutes from './routes/analytics';
 import uploadRoutes from './routes/upload';
+import authRoutes from './routes/auth';
 import { errorHandler } from './middleware/errorHandler';
 import { iframeHeaders } from './middleware/iframeHeaders';
 
@@ -74,6 +75,7 @@ app.get('/api/test', (req, res) => {
 // API Routes - Modular structure
 app.use('/api', sessionRoutes);     // Session management
 app.use('/api', contentRoutes);     // Quiz content
+app.use('/api', authRoutes);        // Authentication
 app.use('/api', adminRoutes);        // Admin operations
 app.use('/api', analyticsRoutes);    // Analytics
 app.use('/api', uploadRoutes);       // File uploads
@@ -96,6 +98,10 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📝 API endpoints:`);
+  console.log(`   - POST http://localhost:${PORT}/api/auth/register`);
+  console.log(`   - POST http://localhost:${PORT}/api/auth/login`);
+  console.log(`   - POST http://localhost:${PORT}/api/auth/refresh`);
+  console.log(`   - POST http://localhost:${PORT}/api/auth/logout`);
   console.log(`   - POST http://localhost:${PORT}/api/session/start`);
   console.log(`   - POST http://localhost:${PORT}/api/session/update`);
   console.log(`   - POST http://localhost:${PORT}/api/session/answers`);

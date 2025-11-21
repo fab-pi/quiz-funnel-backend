@@ -137,3 +137,111 @@ export interface QuizCreationResponse {
     };
   };
 }
+
+// ============================================
+// Authentication Types
+// ============================================
+
+export interface User {
+  userId: number;
+  email: string;
+  fullName: string;
+  role: 'user' | 'admin';
+  isActive: boolean;
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  fullName: string;
+}
+
+export interface RegisterResponse {
+  success: boolean;
+  user: User;
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
+  message?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  success: boolean;
+  user: User;
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
+  message?: string;
+}
+
+export interface TokenPayload {
+  userId: number;
+  email: string;
+  role: 'user' | 'admin';
+  iat?: number;
+  exp?: number;
+}
+
+export interface RefreshTokenRequest {
+  refreshToken: string;
+}
+
+export interface RefreshTokenResponse {
+  success: boolean;
+  accessToken: string;
+  message?: string;
+}
+
+export interface LogoutRequest {
+  refreshToken: string;
+}
+
+export interface LogoutResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+}
+
+export interface PasswordResetRequestResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface PasswordResetConfirm {
+  token: string;
+  password: string;
+}
+
+export interface PasswordResetConfirmResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface EmailVerificationRequest {
+  token: string;
+}
+
+export interface EmailVerificationResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ResendVerificationResponse {
+  success: boolean;
+  message: string;
+}

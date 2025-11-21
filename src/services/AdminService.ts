@@ -7,13 +7,28 @@ export class AdminService extends BaseService {
   }
 
   /**
-   * Get summary metrics for all quizzes
+   * Get summary metrics for quizzes
+   * @param userId - ID of the user requesting (for filtering)
+   * @param userRole - Role of the user ('user' or 'admin')
+   * @param showAll - If true and user is admin, show all quizzes. If false, show only user's quizzes.
    */
-  async getQuizSummaryMetrics(): Promise<any[]> {
+  async getQuizSummaryMetrics(userId: number, userRole: 'user' | 'admin', showAll: boolean = false): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      console.log('📊 Fetching quiz summary metrics...');
+      console.log(`📊 Fetching quiz summary metrics for user ${userId} (role: ${userRole}, showAll: ${showAll})...`);
+      
+      // Build query with optional user filter
+      let whereClause = '';
+      let queryParams: any[] = [];
+
+      if (userRole !== 'admin' || !showAll) {
+        // Regular users always see their own quizzes
+        // Admins see their own if showAll is false
+        whereClause = 'WHERE q.user_id = $1';
+        queryParams = [userId];
+      }
+      // Admin sees all quizzes when showAll is true (no WHERE clause)
       
       const result = await client.query(`
         SELECT 
@@ -22,6 +37,7 @@ export class AdminService extends BaseService {
           q.product_page_url,
           q.quiz_start_url,
           q.is_active,
+          q.user_id,
           COUNT(DISTINCT us.session_id) as quiz_starts,
           COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as quiz_completions,
           CASE 
@@ -37,9 +53,10 @@ export class AdminService extends BaseService {
         LEFT JOIN user_sessions us ON q.quiz_id = us.quiz_id
         LEFT JOIN questions qu ON q.quiz_id = qu.quiz_id
           AND (qu.is_archived = false OR qu.is_archived IS NULL)
-        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active
+        ${whereClause}
+        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id
         ORDER BY q.quiz_id DESC
-      `);
+      `, queryParams);
       
       console.log(`✅ Quiz summary metrics fetched: ${result.rows.length} quizzes`);
       return result.rows;
