@@ -33,8 +33,9 @@ export class QuizCreationService extends BaseService {
           color_text_default, 
           color_text_hover,
           creation_date,
-          user_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          user_id,
+          custom_domain
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING quiz_id
       `, [
         data.quiz_name,
@@ -46,7 +47,8 @@ export class QuizCreationService extends BaseService {
         data.color_text_default,
         data.color_text_hover,
         new Date(),
-        userId
+        userId,
+        data.custom_domain || null
       ]);
 
       const quizId = quizResult.rows[0].quiz_id;
@@ -162,6 +164,7 @@ export class QuizCreationService extends BaseService {
             color_secondary: data.color_secondary,
             color_text_default: data.color_text_default,
             color_text_hover: data.color_text_hover,
+            custom_domain: data.custom_domain || null,
             questions: createdQuestions
           }
         }
@@ -199,7 +202,8 @@ export class QuizCreationService extends BaseService {
           color_secondary, 
           color_text_default, 
           color_text_hover,
-          user_id
+          user_id,
+          custom_domain
         FROM quizzes 
         WHERE quiz_id = $1`,
         [quizId]
@@ -291,6 +295,7 @@ export class QuizCreationService extends BaseService {
         color_secondary: quiz.color_secondary,
         color_text_default: quiz.color_text_default,
         color_text_hover: quiz.color_text_hover,
+        custom_domain: quiz.custom_domain,
         questions
       };
 
@@ -355,8 +360,9 @@ export class QuizCreationService extends BaseService {
           color_primary = $5,
           color_secondary = $6,
           color_text_default = $7,
-          color_text_hover = $8
-        WHERE quiz_id = $9
+          color_text_hover = $8,
+          custom_domain = $9
+        WHERE quiz_id = $10
       `, [
         data.quiz_name,
         data.product_page_url,
@@ -366,6 +372,7 @@ export class QuizCreationService extends BaseService {
         data.color_secondary,
         data.color_text_default,
         data.color_text_hover,
+        data.custom_domain || null,
         quizId
       ]);
       console.log(`✅ Quiz base info updated for quiz ID: ${quizId}`);
@@ -704,6 +711,7 @@ export class QuizCreationService extends BaseService {
             color_secondary: data.color_secondary,
             color_text_default: data.color_text_default,
             color_text_hover: data.color_text_hover,
+            custom_domain: data.custom_domain || null,
             questions: updatedQuestions
           }
         }

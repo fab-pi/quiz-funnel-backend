@@ -38,6 +38,7 @@ export class AdminService extends BaseService {
           q.quiz_start_url,
           q.is_active,
           q.user_id,
+          q.custom_domain,
           COUNT(DISTINCT us.session_id) as quiz_starts,
           COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as quiz_completions,
           CASE 
@@ -54,7 +55,7 @@ export class AdminService extends BaseService {
         LEFT JOIN questions qu ON q.quiz_id = qu.quiz_id
           AND (qu.is_archived = false OR qu.is_archived IS NULL)
         ${whereClause}
-        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id
+        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id, q.custom_domain
         ORDER BY q.quiz_id DESC
       `, queryParams);
       

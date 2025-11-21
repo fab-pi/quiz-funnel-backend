@@ -5,17 +5,73 @@ import { CloudinaryService } from '../services/CloudinaryService';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
+import { promisify } from 'util';
+import dns from 'dns';
 
 const router = Router();
 const quizCreationService = new QuizCreationService(pool);
 const adminService = new AdminService(pool);
 const cloudinaryService = new CloudinaryService();
 
+/**
+ * Validate domain format
+ * @param domain - Domain string to validate
+ * @returns Object with isValid boolean and optional error message
+ */
+function validateDomain(domain: string | null | undefined): { isValid: boolean; error?: string } {
+  if (!domain || domain.trim().length === 0) {
+    return { isValid: true }; // Empty is valid (optional field)
+  }
+
+  const normalized = domain.toLowerCase().trim();
+  
+  // Remove http:// or https:// if present
+  const cleaned = normalized.replace(/^https?:\/\//, '');
+  
+  // Remove trailing slash
+  const finalDomain = cleaned.replace(/\/$/, '');
+  
+  // Basic domain validation regex
+  // Allows: subdomain.domain.tld format
+  const domainRegex = /^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+  
+  if (!domainRegex.test(finalDomain)) {
+    return {
+      isValid: false,
+      error: 'Invalid domain format. Use format like: shop.brandx.com'
+    };
+  }
+
+  // Check for paths (not allowed)
+  if (finalDomain.includes('/')) {
+    return {
+      isValid: false,
+      error: 'Domain should not include paths. Use format like: shop.brandx.com'
+    };
+  }
+
+  // Check for query parameters (not allowed)
+  if (finalDomain.includes('?')) {
+    return {
+      isValid: false,
+      error: 'Domain should not include query parameters. Use format like: shop.brandx.com'
+    };
+  }
+
+  return { isValid: true };
+}
+
+// DNS resolution promises
+const resolveCname = promisify(dns.resolveCname);
+const resolve4 = promisify(dns.resolve4);
+
 // Debug: Log route definitions
 console.log('🔧 Defining admin routes:');
 console.log('  - POST /admin/quiz');
 console.log('  - PUT /admin/quiz/:quizId');
 console.log('  - GET /admin/quiz/:quizId');
+console.log('  - GET /admin/quiz/:quizId/dns-instructions');
+console.log('  - GET /admin/quiz/:quizId/verify-domain');
 console.log('  - GET /admin/quiz-summary');
 
 // POST /admin/quiz - Create new quiz with full structure
@@ -145,6 +201,15 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
 
   } catch (error: any) {
     console.error('❌ Error creating quiz:', error);
+    
+    // Handle duplicate domain error
+    if (error.code === '23505' && error.constraint === 'unique_custom_domain') {
+      return res.status(400).json({
+        success: false,
+        message: 'This domain is already assigned to another quiz'
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create quiz. Transaction rolled back.'
@@ -189,6 +254,19 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
         success: false,
         message: 'Invalid brand_logo_url format. Must be a valid Cloudinary URL.'
       });
+    }
+
+    // Validate custom_domain if provided
+    if (data.custom_domain) {
+      const domainValidation = validateDomain(data.custom_domain);
+      if (!domainValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: domainValidation.error
+        });
+      }
+      // Normalize domain (lowercase, trim, remove protocol and trailing slash)
+      data.custom_domain = data.custom_domain.toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
     }
 
     // Validate questions structure
@@ -317,6 +395,14 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       });
     }
 
+    // Handle duplicate domain error
+    if (error.code === '23505' && error.constraint === 'unique_custom_domain') {
+      return res.status(400).json({
+        success: false,
+        message: 'This domain is already assigned to another quiz'
+      });
+    }
+
     // Handle validation errors
     if (error.message.includes('Duplicate sequence_order') || 
         error.message.includes('at least one active question') ||
@@ -429,6 +515,271 @@ router.get('/admin/quiz-summary', authenticate, async (req: AuthRequest, res: Re
     res.status(500).json({
       success: false,
       message: 'Failed to fetch quiz summary metrics'
+    });
+  }
+});
+
+// GET /admin/quiz/:quizId/dns-instructions - Get DNS configuration instructions for custom domain
+// Protected: Requires authentication (user can view own quizzes, admin can view any)
+router.get('/admin/quiz/:quizId/dns-instructions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { quizId } = req.params;
+
+    // Validate quiz ID
+    if (!quizId || isNaN(parseInt(quizId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid quiz ID is required'
+      });
+    }
+
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Get quiz data to check ownership and get custom_domain
+    const quizData = await quizCreationService.getQuizForEditing(
+      parseInt(quizId),
+      req.user.userId,
+      req.user.role
+    );
+
+    // Check if custom_domain is set
+    if (!quizData.custom_domain || quizData.custom_domain.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No custom domain configured for this quiz'
+      });
+    }
+
+    const domain = quizData.custom_domain.toLowerCase().trim();
+    
+    // Detect domain type: count dots to determine if subdomain or root domain
+    const dotCount = (domain.match(/\./g) || []).length;
+    const isSubdomain = dotCount >= 2; // e.g., shop.brandx.com has 2 dots
+    
+    // Get environment variables
+    const vpsIp = process.env.VPS_IP || '158.69.193.219';
+    const cnameTarget = process.env.CNAME_TARGET || 'domains.try-directquiz.com';
+    
+    let dnsInstructions;
+    
+    if (isSubdomain) {
+      // Subdomain: use CNAME
+      const subdomainPart = domain.split('.')[0]; // e.g., "shop" from "shop.brandx.com"
+      dnsInstructions = {
+        domainType: 'subdomain',
+        dnsType: 'CNAME',
+        name: subdomainPart,
+        value: cnameTarget,
+        instructions: [
+          `Create a CNAME record with name "${subdomainPart}"`,
+          `Point it to "${cnameTarget}"`,
+          `Wait for DNS propagation (can take up to 48 hours)`
+        ]
+      };
+    } else {
+      // Root domain: use A record
+      dnsInstructions = {
+        domainType: 'root',
+        dnsType: 'A',
+        name: '@',
+        value: vpsIp,
+        instructions: [
+          `Create an A record with name "@" (or leave blank)`,
+          `Point it to "${vpsIp}"`,
+          `Wait for DNS propagation (can take up to 48 hours)`
+        ]
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        domain,
+        ...dnsInstructions
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error fetching DNS instructions:', error);
+    
+    if (error.message === 'Quiz not found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Quiz not found'
+      });
+    }
+
+    // Handle authorization errors
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch DNS instructions'
+    });
+  }
+});
+
+// GET /admin/quiz/:quizId/verify-domain - Verify if custom domain DNS is configured correctly
+// Protected: Requires authentication (user can view own quizzes, admin can view any)
+router.get('/admin/quiz/:quizId/verify-domain', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { quizId } = req.params;
+
+    // Validate quiz ID
+    if (!quizId || isNaN(parseInt(quizId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid quiz ID is required'
+      });
+    }
+
+    // Get user info from authenticated request
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Get quiz data to check ownership and get custom_domain
+    const quizData = await quizCreationService.getQuizForEditing(
+      parseInt(quizId),
+      req.user.userId,
+      req.user.role
+    );
+
+    // Check if custom_domain is set
+    if (!quizData.custom_domain || quizData.custom_domain.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No custom domain configured for this quiz'
+      });
+    }
+
+    const domain = quizData.custom_domain.toLowerCase().trim();
+    
+    // Detect domain type
+    const dotCount = (domain.match(/\./g) || []).length;
+    const isSubdomain = dotCount >= 2;
+    
+    // Get environment variables
+    const vpsIp = process.env.VPS_IP || '158.69.193.219';
+    const cnameTarget = process.env.CNAME_TARGET || 'domains.try-directquiz.com';
+    
+    let verified = false;
+    let dnsConfigured = false;
+    let pointsToCorrectTarget = false;
+    let resolvedValue: string | null = null;
+    let message = '';
+
+    try {
+      if (isSubdomain) {
+        // Check CNAME record
+        try {
+          const cnameRecords = await resolveCname(domain);
+          dnsConfigured = cnameRecords.length > 0;
+          
+          if (dnsConfigured) {
+            resolvedValue = cnameRecords[0];
+            // Check if CNAME points to our target (case-insensitive)
+            pointsToCorrectTarget = cnameRecords.some(record => 
+              record.toLowerCase() === cnameTarget.toLowerCase()
+            );
+            verified = pointsToCorrectTarget;
+            
+            if (verified) {
+              message = 'Domain DNS is configured correctly!';
+            } else {
+              message = `Domain points to "${resolvedValue}" but should point to "${cnameTarget}"`;
+            }
+          } else {
+            message = 'CNAME record not found. Please configure DNS first.';
+          }
+        } catch (dnsError: any) {
+          if (dnsError.code === 'ENOTFOUND' || dnsError.code === 'ENODATA') {
+            message = 'CNAME record not found. Please configure DNS first.';
+          } else {
+            throw dnsError;
+          }
+        }
+      } else {
+        // Check A record
+        try {
+          const aRecords = await resolve4(domain);
+          dnsConfigured = aRecords.length > 0;
+          
+          if (dnsConfigured) {
+            resolvedValue = aRecords[0];
+            // Check if A record points to our VPS IP
+            pointsToCorrectTarget = aRecords.includes(vpsIp);
+            verified = pointsToCorrectTarget;
+            
+            if (verified) {
+              message = 'Domain DNS is configured correctly!';
+            } else {
+              message = `Domain points to "${resolvedValue}" but should point to "${vpsIp}"`;
+            }
+          } else {
+            message = 'A record not found. Please configure DNS first.';
+          }
+        } catch (dnsError: any) {
+          if (dnsError.code === 'ENOTFOUND' || dnsError.code === 'ENODATA') {
+            message = 'A record not found. Please configure DNS first.';
+          } else {
+            throw dnsError;
+          }
+        }
+      }
+    } catch (dnsError: any) {
+      console.error('DNS resolution error:', dnsError);
+      message = `DNS lookup failed: ${dnsError.message}`;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        domain,
+        verified,
+        dnsConfigured,
+        pointsToCorrectTarget,
+        resolvedValue,
+        message,
+        expectedValue: isSubdomain ? cnameTarget : vpsIp
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error verifying domain:', error);
+    
+    if (error.message === 'Quiz not found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Quiz not found'
+      });
+    }
+
+    // Handle authorization errors
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to verify domain'
     });
   }
 });

@@ -113,4 +113,34 @@ export class QuizContentService extends BaseService {
       client.release();
     }
   }
+
+  /**
+   * Get quiz ID by custom domain
+   * @param domain - Custom domain to look up
+   * @returns Quiz ID if found, null otherwise
+   */
+  async getQuizByDomain(domain: string): Promise<number | null> {
+    const client = await this.pool.connect();
+    
+    try {
+      // Normalize domain (lowercase, trim)
+      const normalizedDomain = domain.toLowerCase().trim();
+      
+      const result = await client.query(
+        'SELECT quiz_id FROM quizzes WHERE custom_domain = $1 AND is_active = true',
+        [normalizedDomain]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return result.rows[0].quiz_id;
+    } catch (error) {
+      console.error('❌ Error fetching quiz by domain:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }

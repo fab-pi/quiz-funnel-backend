@@ -103,6 +103,7 @@ export interface QuizCreationRequest {
   color_secondary: string;
   color_text_default: string;
   color_text_hover: string;
+  custom_domain?: string | null;
   questions: QuizCreationQuestion[];
 }
 
@@ -121,6 +122,7 @@ export interface QuizCreationResponse {
       color_secondary: string;
       color_text_default: string;
       color_text_hover: string;
+      custom_domain?: string | null;
       questions: Array<{
         question_id: number;
         sequence_order: number;
