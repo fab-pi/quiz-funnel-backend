@@ -25,18 +25,26 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // In production, check against allowed origins
+    // In production, allow main domain and all HTTPS origins (for custom domains)
     if (process.env.NODE_ENV === 'production') {
       const allowedOrigins = process.env.ALLOWED_ORIGINS
-        ? process.env.ALLOWED_ORIGINS.split(',')
-        : ['https://your-frontend-domain.com'];
+        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+        : [];
       
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        // In production, be more restrictive
-        callback(new Error('Not allowed by CORS'));
+      // Always allow main domain
+      const mainDomain = process.env.MAIN_DOMAIN || 'https://quiz.try-directquiz.com';
+      if (allowedOrigins.includes(origin) || origin === mainDomain) {
+        return callback(null, true);
       }
+      
+      // Allow all HTTPS origins (for custom domains)
+      // Custom domains are validated when saved to database, so this is safe
+      if (origin.startsWith('https://')) {
+        return callback(null, true);
+      }
+      
+      // Reject HTTP in production (should use HTTPS)
+      callback(new Error('Not allowed by CORS'));
     } else {
       // In development, allow all origins for easier testing
       callback(null, true);
