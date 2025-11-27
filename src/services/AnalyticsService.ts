@@ -325,15 +325,41 @@ export class AnalyticsService extends BaseService {
           WHERE us.quiz_id = $1
             AND us.session_id IN (SELECT session_id FROM filtered_sessions)
         ),
+        question_answer_sessions AS (
+          -- Count unique sessions that actually answered each question
+          -- This is used to ensure views >= answers for answerable question types
+          SELECT 
+            q.question_id,
+            COUNT(DISTINCT ua.session_id) as unique_sessions_answered
+          FROM questions q
+          LEFT JOIN user_answers ua ON ua.question_id = q.question_id
+          LEFT JOIN filtered_sessions fs ON fs.session_id = ua.session_id
+          WHERE q.quiz_id = $1 
+            AND (q.is_archived = false OR q.is_archived IS NULL)
+            ${answerDateFilterSql}
+          GROUP BY q.question_id
+        ),
         question_views AS (
           SELECT 
             q.question_id,
-            COUNT(DISTINCT sls.session_id) as views
+            -- For answerable types: use MAX of calculated views and actual answer sessions
+            -- This ensures views >= answers (if someone answered, they must have viewed)
+            -- For info screens: use only calculated views (they don't have answers)
+            CASE 
+              WHEN q.interaction_type IN ('single_choice', 'multiple_choice', 'image_card') THEN
+                GREATEST(
+                  COALESCE(COUNT(DISTINCT sls.session_id), 0), -- Calculated from last_question_viewed
+                  COALESCE(qas.unique_sessions_answered, 0) -- Actual sessions that answered
+                )
+              ELSE
+                COALESCE(COUNT(DISTINCT sls.session_id), 0) -- Info screens: only calculated views
+            END as views
           FROM questions q
           LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
+          LEFT JOIN question_answer_sessions qas ON qas.question_id = q.question_id
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
-          GROUP BY q.question_id
+          GROUP BY q.question_id, qas.unique_sessions_answered
         ),
         question_answers AS (
           SELECT 
