@@ -265,7 +265,29 @@ export class AnalyticsService extends BaseService {
       const dateFilter = this.buildDateFilter(startDate, endDate, 1);
       const dateFilterSql = dateFilter.sql ? dateFilter.sql.replace('start_timestamp', 'us.start_timestamp') : '';
 
-      const params = [parseInt(quizId), ...dateFilter.params];
+      // Build answer date filter (filter by answer_timestamp, not session start_timestamp)
+      // Parameter offset: quizId ($1) + dateFilter params
+      const paramOffset = 1 + dateFilter.params.length;
+      const answerDateConditions: string[] = [];
+      const answerDateParams: any[] = [];
+
+      if (startDate) {
+        answerDateConditions.push(`ua.answer_timestamp >= $${paramOffset + answerDateParams.length + 1}`);
+        answerDateParams.push(startDate);
+      }
+
+      if (endDate) {
+        const endDateInclusive = new Date(endDate);
+        endDateInclusive.setHours(23, 59, 59, 999);
+        answerDateConditions.push(`ua.answer_timestamp <= $${paramOffset + answerDateParams.length + 1}`);
+        answerDateParams.push(endDateInclusive);
+      }
+
+      const answerDateFilterSql = answerDateConditions.length > 0 
+        ? `AND ${answerDateConditions.join(' AND ')}` 
+        : '';
+
+      const params = [parseInt(quizId), ...dateFilter.params, ...answerDateParams];
 
       const result = await client.query(`
         WITH filtered_sessions AS (
@@ -294,7 +316,33 @@ export class AnalyticsService extends BaseService {
           LEFT JOIN filtered_sessions fs ON fs.session_id = ua.session_id
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
+            ${answerDateFilterSql}
           GROUP BY q.question_id
+        ),
+        question_completions AS (
+          SELECT 
+            q.question_id,
+            COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as completions
+          FROM questions q
+          LEFT JOIN user_sessions us ON us.quiz_id = q.quiz_id
+            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
+            AND (us.last_question_viewed >= q.question_id OR us.last_question_viewed IS NULL)
+          WHERE q.quiz_id = $1 
+            AND (q.is_archived = false OR q.is_archived IS NULL)
+          GROUP BY q.question_id
+        ),
+        next_question_views AS (
+          SELECT 
+            q1.question_id,
+            COALESCE(qv2.views, 0) as next_views,
+            CASE WHEN q2.question_id IS NULL THEN true ELSE false END as is_last_question
+          FROM questions q1
+          LEFT JOIN questions q2 ON q2.quiz_id = q1.quiz_id 
+            AND q2.sequence_order = q1.sequence_order + 1
+            AND (q2.is_archived = false OR q2.is_archived IS NULL)
+          LEFT JOIN question_views qv2 ON qv2.question_id = q2.question_id
+          WHERE q1.quiz_id = $1 
+            AND (q1.is_archived = false OR q1.is_archived IS NULL)
         ),
         question_times AS (
           SELECT 
@@ -322,6 +370,7 @@ export class AnalyticsService extends BaseService {
           ) prev_answer ON true
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
+            ${answerDateFilterSql}
           GROUP BY q.question_id
         )
         SELECT 
@@ -329,19 +378,40 @@ export class AnalyticsService extends BaseService {
           q.question_text,
           q.interaction_type,
           COALESCE(qv.views, 0) as views,
-          COALESCE(qa.answers, 0) as answers,
+          -- For info screen types: use views as answers. For answerable types: use actual answers
+          CASE 
+            WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') 
+            THEN COALESCE(qv.views, 0)
+            ELSE COALESCE(qa.answers, 0)
+          END as answers,
+          -- Answer rate: 100% for info screens (viewing = completion), normal calculation for answerable types
           CASE 
             WHEN COALESCE(qv.views, 0) = 0 THEN 0
+            WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') THEN 100.00
             ELSE ROUND((COALESCE(qa.answers, 0)::numeric / qv.views::numeric * 100), 2)
           END as answer_rate,
+          -- Drop rate: based on next question views for info screens, based on answers for answerable types
           CASE 
             WHEN COALESCE(qv.views, 0) = 0 THEN 0
-            ELSE ROUND(((qv.views - COALESCE(qa.answers, 0))::numeric / qv.views::numeric * 100), 2)
+            WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') THEN
+              -- For info screens: drop = (current_views - next_views) / current_views
+              -- If no next question (is_last_question), use completions: drop = (views - completions) / views
+              CASE 
+                WHEN nqv.is_last_question = true THEN
+                  ROUND(((qv.views - COALESCE(qc.completions, 0))::numeric / qv.views::numeric * 100), 2)
+                ELSE
+                  ROUND(((qv.views - nqv.next_views)::numeric / qv.views::numeric * 100), 2)
+              END
+            ELSE
+              -- For answerable types: drop = (views - answers) / views
+              ROUND(((qv.views - COALESCE(qa.answers, 0))::numeric / qv.views::numeric * 100), 2)
           END as drop_rate,
           COALESCE(ROUND(qt.avg_time_seconds::numeric, 2), 0) as avg_time_seconds
         FROM questions q
         LEFT JOIN question_views qv ON qv.question_id = q.question_id
         LEFT JOIN question_answers qa ON qa.question_id = q.question_id
+        LEFT JOIN next_question_views nqv ON nqv.question_id = q.question_id
+        LEFT JOIN question_completions qc ON qc.question_id = q.question_id
         LEFT JOIN question_times qt ON qt.question_id = q.question_id
         WHERE q.quiz_id = $1 
           AND (q.is_archived = false OR q.is_archived IS NULL)

@@ -281,7 +281,7 @@ router.get('/analytics/daily-activity/:quizId', authenticate, async (req: AuthRe
     // Get user info from authenticated request
     if (!req.user) {
       return res.status(401).json({
-        success: false,
+      success: false,
         message: 'Authentication required'
       });
     }
