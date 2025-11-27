@@ -16,25 +16,25 @@ export class AnalyticsService extends BaseService {
    */
   private async validateQuizAccess(
     client: any,
-    quizId: string,
+    quizId: string, 
     userId: number,
     userRole: 'user' | 'admin'
   ): Promise<void> {
-    const quizCheck = await client.query(
-      'SELECT user_id FROM quizzes WHERE quiz_id = $1',
-      [parseInt(quizId)]
-    );
+      const quizCheck = await client.query(
+        'SELECT user_id FROM quizzes WHERE quiz_id = $1',
+        [parseInt(quizId)]
+      );
 
-    if (quizCheck.rows.length === 0) {
-      throw new Error('Quiz not found');
-    }
+      if (quizCheck.rows.length === 0) {
+        throw new Error('Quiz not found');
+      }
 
-    const quiz = quizCheck.rows[0];
+      const quiz = quizCheck.rows[0];
 
-    // Check ownership (admin can access any quiz, users can only access their own)
-    if (userRole !== 'admin' && quiz.user_id !== userId) {
-      throw new Error('Unauthorized: You do not own this quiz');
-    }
+      // Check ownership (admin can access any quiz, users can only access their own)
+      if (userRole !== 'admin' && quiz.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this quiz');
+      }
   }
 
   /**
@@ -101,22 +101,38 @@ export class AnalyticsService extends BaseService {
       const dateFilterSql = dateFilter.sql.replace('start_timestamp', 'us.start_timestamp');
       
       const result = await client.query(`
+        WITH filtered_sessions AS (
+          SELECT session_id
+          FROM user_sessions
+          WHERE quiz_id = $1 ${dateFilter.sql}
+        ),
+        session_last_sequences AS (
+          -- Map last_question_viewed (question_id) to sequence_order
+          -- last_question_viewed represents the NEXT question they're about to view
+          SELECT 
+            us.session_id,
+            COALESCE(q_viewed.sequence_order, NULL) as last_sequence_viewed
+          FROM user_sessions us
+          LEFT JOIN questions q_viewed ON q_viewed.question_id = us.last_question_viewed
+            AND q_viewed.quiz_id = us.quiz_id
+            AND (q_viewed.is_archived = false OR q_viewed.is_archived IS NULL)
+          WHERE us.quiz_id = $1
+            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
+        )
         SELECT 
           q.question_id,
           q.question_text,
-          COUNT(us.session_id) as reached_count,
+          COUNT(DISTINCT sls.session_id) as reached_count,
           CASE 
-            WHEN COUNT(us.session_id) = 0 THEN 0
+            WHEN COUNT(DISTINCT sls.session_id) = 0 THEN 0
             ELSE ROUND(
-              (COUNT(us.session_id) - COUNT(ua.answer_id))::numeric / COUNT(us.session_id)::numeric * 100, 
+              (COUNT(DISTINCT sls.session_id) - COUNT(ua.answer_id))::numeric / COUNT(DISTINCT sls.session_id)::numeric * 100, 
               2
             )
           END as drop_rate_percentage
         FROM questions q
-        LEFT JOIN user_sessions us ON us.quiz_id = q.quiz_id 
-          AND (us.last_question_viewed >= q.question_id OR us.last_question_viewed IS NULL)
-          ${dateFilterSql}
-        LEFT JOIN user_answers ua ON ua.session_id = us.session_id 
+        LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
+        LEFT JOIN user_answers ua ON ua.session_id = sls.session_id 
           AND ua.question_id = q.question_id
         WHERE q.quiz_id = $1 ${archiveFilter}
         GROUP BY q.question_id, q.question_text, q.sequence_order
@@ -295,14 +311,26 @@ export class AnalyticsService extends BaseService {
           FROM user_sessions
           WHERE quiz_id = $1 ${dateFilter.sql}
         ),
+        session_last_sequences AS (
+          -- Map last_question_viewed (question_id) to sequence_order
+          -- last_question_viewed represents the NEXT question they're about to view
+          -- So if last_question_viewed = question with sequence 5, they've viewed sequences 0-4
+          SELECT 
+            us.session_id,
+            COALESCE(q_viewed.sequence_order, NULL) as last_sequence_viewed
+          FROM user_sessions us
+          LEFT JOIN questions q_viewed ON q_viewed.question_id = us.last_question_viewed
+            AND q_viewed.quiz_id = us.quiz_id
+            AND (q_viewed.is_archived = false OR q_viewed.is_archived IS NULL)
+          WHERE us.quiz_id = $1
+            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
+        ),
         question_views AS (
           SELECT 
             q.question_id,
-            COUNT(DISTINCT us.session_id) as views
+            COUNT(DISTINCT sls.session_id) as views
           FROM questions q
-          LEFT JOIN user_sessions us ON us.quiz_id = q.quiz_id 
-            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
-            AND (us.last_question_viewed >= q.question_id OR us.last_question_viewed IS NULL)
+          LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
           GROUP BY q.question_id
@@ -322,11 +350,11 @@ export class AnalyticsService extends BaseService {
         question_completions AS (
           SELECT 
             q.question_id,
-            COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as completions
+            COUNT(DISTINCT CASE WHEN us.is_completed = true THEN sls.session_id END) as completions
           FROM questions q
-          LEFT JOIN user_sessions us ON us.quiz_id = q.quiz_id
-            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
-            AND (us.last_question_viewed >= q.question_id OR us.last_question_viewed IS NULL)
+          LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
+          LEFT JOIN user_sessions us ON us.session_id = sls.session_id
+            AND us.is_completed = true
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
           GROUP BY q.question_id
