@@ -44,7 +44,7 @@ const corsOptions = {
       }
       
       // Reject HTTP in production (should use HTTPS)
-      callback(new Error('Not allowed by CORS'));
+        callback(new Error('Not allowed by CORS'));
     } else {
       // In development, allow all origins for easier testing
       callback(null, true);
