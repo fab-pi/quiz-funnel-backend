@@ -288,7 +288,7 @@ export class AnalyticsService extends BaseService {
         question_answers AS (
           SELECT 
             q.question_id,
-            COUNT(ua.answer_id) as answers
+            COUNT(DISTINCT ua.session_id) as answers
           FROM questions q
           LEFT JOIN user_answers ua ON ua.question_id = q.question_id
           LEFT JOIN filtered_sessions fs ON fs.session_id = ua.session_id
@@ -381,6 +381,16 @@ export class AnalyticsService extends BaseService {
     try {
       await this.validateQuizAccess(client, quizId, userId, userRole);
 
+      // Verify question belongs to quiz
+      const questionCheck = await client.query(
+        'SELECT question_id FROM questions WHERE question_id = $1 AND quiz_id = $2',
+        [parseInt(questionId), parseInt(quizId)]
+      );
+
+      if (questionCheck.rows.length === 0) {
+        throw new Error('Question not found or does not belong to this quiz');
+      }
+
       // Build date filter conditions
       const dateConditions: string[] = [];
       const params: any[] = [parseInt(quizId), parseInt(questionId)];
@@ -401,30 +411,45 @@ export class AnalyticsService extends BaseService {
         ? `AND ${dateConditions.join(' AND ')}` 
         : '';
 
+      console.log(`🔍 Fetching answer distribution for quiz ${quizId}, question ${questionId}`);
+      console.log(`📅 Date filter: ${dateFilterSql || 'none'}`);
+      console.log(`📊 Parameters:`, params);
+
       const result = await client.query(`
         WITH filtered_answers AS (
-          SELECT ua.answer_id, ua.selected_option_id
+          SELECT 
+            ua.session_id,
+            ua.selected_option_id,
+            ua.answer_timestamp,
+            ROW_NUMBER() OVER (PARTITION BY ua.session_id ORDER BY ua.answer_timestamp DESC) as rn
           FROM user_answers ua
           JOIN user_sessions us ON us.session_id = ua.session_id
-          WHERE ua.question_id = $2 ${dateFilterSql}
+          WHERE ua.question_id = $2 
+            AND us.quiz_id = $1
+            ${dateFilterSql}
+        ),
+        latest_answers AS (
+          SELECT selected_option_id
+          FROM filtered_answers
+          WHERE rn = 1
         ),
         total_answers AS (
           SELECT COUNT(*) as total
-          FROM filtered_answers
+          FROM latest_answers
         )
         SELECT 
           ao.option_id,
           ao.option_text,
-          COUNT(fa.answer_id) as selection_count,
+          COUNT(la.selected_option_id) as selection_count,
           CASE 
             WHEN (SELECT total FROM total_answers) = 0 THEN 0
             ELSE ROUND(
-              (COUNT(fa.answer_id)::numeric / (SELECT total FROM total_answers)::numeric * 100), 
+              (COUNT(la.selected_option_id)::numeric / (SELECT total FROM total_answers)::numeric * 100), 
               2
             )
           END as percentage
         FROM answer_options ao
-        LEFT JOIN filtered_answers fa ON fa.selected_option_id = ao.option_id
+        LEFT JOIN latest_answers la ON la.selected_option_id = ao.option_id
         WHERE ao.question_id = $2
           AND (ao.is_archived = false OR ao.is_archived IS NULL)
         GROUP BY ao.option_id, ao.option_text
@@ -432,6 +457,7 @@ export class AnalyticsService extends BaseService {
       `, params);
 
       console.log(`✅ Answer distribution fetched for question ${questionId}: ${result.rows.length} options`);
+      console.log(`📈 Sample data:`, result.rows.slice(0, 3));
       return result.rows;
 
     } catch (error) {
