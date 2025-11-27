@@ -207,7 +207,7 @@ export class SessionService extends BaseService {
       // Query utm_params from user_sessions
       const result = await client.query(
         'SELECT utm_params FROM user_sessions WHERE session_id = $1',
-        [parseInt(sessionId)]
+        [sessionId]
       );
 
       if (result.rows.length === 0) {

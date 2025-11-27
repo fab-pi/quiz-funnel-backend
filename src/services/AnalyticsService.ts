@@ -311,26 +311,47 @@ export class AnalyticsService extends BaseService {
           FROM user_sessions
           WHERE quiz_id = $1 ${dateFilter.sql}
         ),
-        session_last_sequences AS (
-          -- Map last_question_viewed (question_id) to sequence_order
-          -- last_question_viewed represents the NEXT question they're about to view
-          -- So if last_question_viewed = question with sequence 5, they've viewed sequences 0-4
-          SELECT 
-            us.session_id,
-            COALESCE(q_viewed.sequence_order, NULL) as last_sequence_viewed
+        -- Count sessions with NULL last_question_viewed and no answers (landed but exited immediately)
+        null_sessions_without_answers AS (
+          SELECT COUNT(DISTINCT us.session_id) as count
           FROM user_sessions us
-          LEFT JOIN questions q_viewed ON q_viewed.question_id = us.last_question_viewed
-            AND q_viewed.quiz_id = us.quiz_id
-            AND (q_viewed.is_archived = false OR q_viewed.is_archived IS NULL)
+          LEFT JOIN user_answers ua ON ua.session_id = us.session_id
           WHERE us.quiz_id = $1
             AND us.session_id IN (SELECT session_id FROM filtered_sessions)
+            AND us.last_question_viewed IS NULL
+            AND ua.answer_id IS NULL
         ),
-        question_answer_sessions AS (
-          -- Count unique sessions that actually answered each question
-          -- This is used to ensure views >= answers for answerable question types
+        -- Map last_question_viewed (question_id) to sequence_order
+        -- If last_question_viewed = question with sequence 5, they've viewed sequences 0-4
+        session_progress AS (
+          SELECT 
+            us.session_id,
+            q.sequence_order as last_sequence_viewed
+          FROM user_sessions us
+          JOIN questions q ON q.question_id = us.last_question_viewed
+            AND q.quiz_id = us.quiz_id
+            AND (q.is_archived = false OR q.is_archived IS NULL)
+          WHERE us.quiz_id = $1
+            AND us.session_id IN (SELECT session_id FROM filtered_sessions)
+            AND us.last_question_viewed IS NOT NULL
+        ),
+        -- Base views: count sessions where last_sequence_viewed > question sequence
+        base_views AS (
           SELECT 
             q.question_id,
-            COUNT(DISTINCT ua.session_id) as unique_sessions_answered
+            q.sequence_order,
+            COUNT(DISTINCT sp.session_id) as calculated_views
+          FROM questions q
+          LEFT JOIN session_progress sp ON sp.last_sequence_viewed > q.sequence_order
+          WHERE q.quiz_id = $1 
+            AND (q.is_archived = false OR q.is_archived IS NULL)
+          GROUP BY q.question_id, q.sequence_order
+        ),
+        -- Count actual answers per question
+        actual_answers AS (
+          SELECT 
+            q.question_id,
+            COUNT(DISTINCT ua.session_id) as answer_count
           FROM questions q
           LEFT JOIN user_answers ua ON ua.question_id = q.question_id
           LEFT JOIN filtered_sessions fs ON fs.session_id = ua.session_id
@@ -339,65 +360,82 @@ export class AnalyticsService extends BaseService {
             ${answerDateFilterSql}
           GROUP BY q.question_id
         ),
-        question_views AS (
+        -- Calculate raw views: MAX(calculated_views, answer_count) to ensure views >= answers
+        question_views_raw AS (
           SELECT 
             q.question_id,
-            -- For answerable types: use MAX of calculated views and actual answer sessions
-            -- This ensures views >= answers (if someone answered, they must have viewed)
-            -- For info screens: use only calculated views (they don't have answers)
+            q.sequence_order,
+            GREATEST(
+              COALESCE(bv.calculated_views, 0),
+              COALESCE(aa.answer_count, 0)
+            ) as raw_views
+          FROM questions q
+          LEFT JOIN base_views bv ON bv.question_id = q.question_id
+          LEFT JOIN actual_answers aa ON aa.question_id = q.question_id
+          WHERE q.quiz_id = $1 
+            AND (q.is_archived = false OR q.is_archived IS NULL)
+        ),
+        -- Add NULL sessions to first question (sequence_order = 0)
+        question_views_with_null_sessions AS (
+          SELECT 
+            qvr.question_id,
+            qvr.sequence_order,
             CASE 
-              WHEN q.interaction_type IN ('single_choice', 'multiple_choice', 'image_card') THEN
-                GREATEST(
-                  COALESCE(COUNT(DISTINCT sls.session_id), 0), -- Calculated from last_question_viewed
-                  COALESCE(qas.unique_sessions_answered, 0) -- Actual sessions that answered
-                )
+              WHEN qvr.sequence_order = 0 THEN
+                qvr.raw_views + COALESCE(ns.count, 0)
               ELSE
-                COALESCE(COUNT(DISTINCT sls.session_id), 0) -- Info screens: only calculated views
-            END as views
-          FROM questions q
-          LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
-          LEFT JOIN question_answer_sessions qas ON qas.question_id = q.question_id
-          WHERE q.quiz_id = $1 
-            AND (q.is_archived = false OR q.is_archived IS NULL)
-          GROUP BY q.question_id, qas.unique_sessions_answered
+                qvr.raw_views
+            END as raw_views
+          FROM question_views_raw qvr
+          CROSS JOIN null_sessions_without_answers ns
         ),
-        question_answers AS (
+        -- CRITICAL: Ensure views are non-increasing (Q1 >= Q2 >= Q3...)
+        -- If a later question has MORE views than an earlier question, increase the earlier question
+        -- This fixes data inconsistencies where later questions might have more views
+        final_views_propagated AS (
           SELECT 
-            q.question_id,
-            COUNT(DISTINCT ua.session_id) as answers
-          FROM questions q
-          LEFT JOIN user_answers ua ON ua.question_id = q.question_id
-          LEFT JOIN filtered_sessions fs ON fs.session_id = ua.session_id
-          WHERE q.quiz_id = $1 
-            AND (q.is_archived = false OR q.is_archived IS NULL)
-            ${answerDateFilterSql}
-          GROUP BY q.question_id
+            qv.question_id,
+            qv.sequence_order,
+            -- For each question, ensure it has at least as many views as all later questions
+            GREATEST(
+              qv.raw_views,
+              COALESCE(
+                (SELECT MAX(qv2.raw_views) 
+                 FROM question_views_with_null_sessions qv2 
+                 WHERE qv2.sequence_order > qv.sequence_order),
+                0
+              )
+            ) as views
+          FROM question_views_with_null_sessions qv
         ),
+        -- Get next question views for drop rate calculation
+        next_question_views AS (
+          SELECT 
+            q1.question_id,
+            COALESCE(fvp2.views, 0) as next_views,
+            CASE WHEN q2.question_id IS NULL THEN true ELSE false END as is_last
+          FROM questions q1
+          LEFT JOIN questions q2 ON q2.quiz_id = q1.quiz_id 
+            AND q2.sequence_order = q1.sequence_order + 1
+            AND (q2.is_archived = false OR q2.is_archived IS NULL)
+          LEFT JOIN final_views_propagated fvp2 ON fvp2.question_id = q2.question_id
+          WHERE q1.quiz_id = $1 
+            AND (q1.is_archived = false OR q1.is_archived IS NULL)
+        ),
+        -- Count completions for last question drop rate
         question_completions AS (
           SELECT 
             q.question_id,
-            COUNT(DISTINCT CASE WHEN us.is_completed = true THEN sls.session_id END) as completions
+            COUNT(DISTINCT CASE WHEN us.is_completed = true THEN sp.session_id END) as completions
           FROM questions q
-          LEFT JOIN session_last_sequences sls ON sls.last_sequence_viewed > q.sequence_order
-          LEFT JOIN user_sessions us ON us.session_id = sls.session_id
+          LEFT JOIN session_progress sp ON sp.last_sequence_viewed > q.sequence_order
+          LEFT JOIN user_sessions us ON us.session_id = sp.session_id
             AND us.is_completed = true
           WHERE q.quiz_id = $1 
             AND (q.is_archived = false OR q.is_archived IS NULL)
           GROUP BY q.question_id
         ),
-        next_question_views AS (
-          SELECT 
-            q1.question_id,
-            COALESCE(qv2.views, 0) as next_views,
-            CASE WHEN q2.question_id IS NULL THEN true ELSE false END as is_last_question
-          FROM questions q1
-          LEFT JOIN questions q2 ON q2.quiz_id = q1.quiz_id 
-            AND q2.sequence_order = q1.sequence_order + 1
-            AND (q2.is_archived = false OR q2.is_archived IS NULL)
-          LEFT JOIN question_views qv2 ON qv2.question_id = q2.question_id
-          WHERE q1.quiz_id = $1 
-            AND (q1.is_archived = false OR q1.is_archived IS NULL)
-        ),
+        -- Calculate average time on question
         question_times AS (
           SELECT 
             q.question_id,
@@ -431,39 +469,33 @@ export class AnalyticsService extends BaseService {
           q.question_id,
           q.question_text,
           q.interaction_type,
-          COALESCE(qv.views, 0) as views,
-          -- For info screen types: use views as answers. For answerable types: use actual answers
+          COALESCE(fvp.views, 0) as views,
+          -- Answers: for info screens use views, for answerable types use actual count
           CASE 
             WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') 
-            THEN COALESCE(qv.views, 0)
-            ELSE COALESCE(qa.answers, 0)
+            THEN COALESCE(fvp.views, 0)
+            ELSE COALESCE(aa.answer_count, 0)
           END as answers,
-          -- Answer rate: 100% for info screens (viewing = completion), normal calculation for answerable types
+          -- Answer rate: 100% for info screens, normal calculation for answerable types
           CASE 
-            WHEN COALESCE(qv.views, 0) = 0 THEN 0
+            WHEN COALESCE(fvp.views, 0) = 0 THEN 0
             WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') THEN 100.00
-            ELSE ROUND((COALESCE(qa.answers, 0)::numeric / qv.views::numeric * 100), 2)
+            ELSE ROUND((COALESCE(aa.answer_count, 0)::numeric / fvp.views::numeric * 100), 2)
           END as answer_rate,
-          -- Drop rate: based on next question views for info screens, based on answers for answerable types
+          -- Drop rate: unified logic for all types (current_views - next_views) / current_views
           CASE 
-            WHEN COALESCE(qv.views, 0) = 0 THEN 0
-            WHEN q.interaction_type IN ('fake_loader', 'info_screen', 'result_page', 'timeline_projection') THEN
-              -- For info screens: drop = (current_views - next_views) / current_views
-              -- If no next question (is_last_question), use completions: drop = (views - completions) / views
-              CASE 
-                WHEN nqv.is_last_question = true THEN
-                  ROUND(((qv.views - COALESCE(qc.completions, 0))::numeric / qv.views::numeric * 100), 2)
-                ELSE
-                  ROUND(((qv.views - nqv.next_views)::numeric / qv.views::numeric * 100), 2)
-              END
+            WHEN COALESCE(fvp.views, 0) = 0 THEN 0
+            WHEN nqv.is_last = true THEN
+              -- Last question: drop = (views - completions) / views
+              ROUND(((fvp.views - COALESCE(qc.completions, 0))::numeric / fvp.views::numeric * 100), 2)
             ELSE
-              -- For answerable types: drop = (views - answers) / views
-              ROUND(((qv.views - COALESCE(qa.answers, 0))::numeric / qv.views::numeric * 100), 2)
+              -- Not last: drop = (current_views - next_views) / current_views (clamped to 0 minimum)
+              GREATEST(0, ROUND(((fvp.views - nqv.next_views)::numeric / fvp.views::numeric * 100), 2))
           END as drop_rate,
           COALESCE(ROUND(qt.avg_time_seconds::numeric, 2), 0) as avg_time_seconds
         FROM questions q
-        LEFT JOIN question_views qv ON qv.question_id = q.question_id
-        LEFT JOIN question_answers qa ON qa.question_id = q.question_id
+        JOIN final_views_propagated fvp ON fvp.question_id = q.question_id
+        LEFT JOIN actual_answers aa ON aa.question_id = q.question_id
         LEFT JOIN next_question_views nqv ON nqv.question_id = q.question_id
         LEFT JOIN question_completions qc ON qc.question_id = q.question_id
         LEFT JOIN question_times qt ON qt.question_id = q.question_id
