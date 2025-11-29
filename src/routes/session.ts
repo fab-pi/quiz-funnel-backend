@@ -27,7 +27,7 @@ router.post('/session/start', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await sessionService.startSession(data);
+    const result = await sessionService.startSession(data, req);
     res.status(200).json(result);
 
   } catch (error: any) {
@@ -77,7 +77,7 @@ router.post('/session/answers', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await sessionService.submitAnswer(data);
+    const result = await sessionService.submitAnswer(data, req);
     res.status(201).json(result);
 
   } catch (error: any) {
@@ -102,7 +102,7 @@ router.post('/session/complete', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await sessionService.completeSession(sessionId);
+    const result = await sessionService.completeSession(sessionId, req);
     res.status(200).json(result);
 
   } catch (error: any) {

@@ -7,6 +7,7 @@ import { QuizCreationRequest } from '../types';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import { promisify } from 'util';
 import dns from 'dns';
+import { facebookPixelService } from '../services/FacebookPixelService';
 
 const router = Router();
 const quizCreationService = new QuizCreationService(pool);
@@ -780,6 +781,96 @@ router.get('/admin/quiz/:quizId/verify-domain', authenticate, async (req: AuthRe
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to verify domain'
+    });
+  }
+});
+
+// PATCH /admin/quiz/:quizId/facebook-pixel - Update only Facebook Pixel configuration
+// Protected: Requires authentication (user can update own quizzes, admin can update any)
+router.patch('/admin/quiz/:quizId/facebook-pixel', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { quizId } = req.params;
+    const { facebook_pixel_id, facebook_access_token } = req.body;
+
+    // Validate quiz ID
+    if (!quizId || isNaN(parseInt(quizId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid quiz ID is required'
+      });
+    }
+
+    const quizIdNum = parseInt(quizId);
+    const userId = req.user!.userId;
+    const userRole = req.user!.role;
+
+    // Verify user has permission to update this quiz
+    const quizCheck = await pool.query(
+      'SELECT user_id FROM quizzes WHERE quiz_id = $1',
+      [quizIdNum]
+    );
+
+    if (quizCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quiz not found'
+      });
+    }
+
+    // Check permissions: user can only update their own quizzes, admin can update any
+    if (userRole !== 'admin' && quizCheck.rows[0].user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this quiz'
+      });
+    }
+
+    // Validate Pixel ID format if provided
+    if (facebook_pixel_id && facebook_pixel_id.trim().length > 0) {
+      const pixelIdRegex = /^\d+$/;
+      if (!pixelIdRegex.test(facebook_pixel_id.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Facebook Pixel ID must be numeric'
+        });
+      }
+    }
+
+    // Encrypt access token if provided
+    let encryptedToken: string | null = null;
+    if (facebook_access_token && facebook_access_token.trim().length > 0) {
+      encryptedToken = facebookPixelService.encryptToken(facebook_access_token.trim());
+    }
+
+    // Update only Facebook Pixel fields
+    await pool.query(
+      `UPDATE quizzes SET
+        facebook_pixel_id = $1,
+        facebook_access_token_encrypted = $2
+      WHERE quiz_id = $3`,
+      [
+        facebook_pixel_id && facebook_pixel_id.trim().length > 0 ? facebook_pixel_id.trim() : null,
+        encryptedToken,
+        quizIdNum
+      ]
+    );
+
+    console.log(`✅ Facebook Pixel config updated for quiz ID: ${quizIdNum}`);
+
+    return res.json({
+      success: true,
+      message: 'Facebook Pixel configuration updated successfully',
+      data: {
+        quiz_id: quizIdNum,
+        facebook_pixel_id: facebook_pixel_id && facebook_pixel_id.trim().length > 0 ? facebook_pixel_id.trim() : null
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error updating Facebook Pixel config:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update Facebook Pixel configuration'
     });
   }
 });

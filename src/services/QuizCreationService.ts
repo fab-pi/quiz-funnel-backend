@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { BaseService } from './BaseService';
 import { QuizCreationRequest, QuizCreationResponse } from '../types';
+import { facebookPixelService } from './FacebookPixelService';
 
 export class QuizCreationService extends BaseService {
   constructor(pool: Pool) {
@@ -21,6 +22,11 @@ export class QuizCreationService extends BaseService {
 
       console.log(`🔄 Starting quiz creation transaction for user ${userId}...`);
 
+      // Encrypt Facebook access token if provided
+      const encryptedToken = data.facebook_access_token 
+        ? facebookPixelService.encryptToken(data.facebook_access_token)
+        : null;
+
       // Insert quiz with user_id
       const quizResult = await client.query(`
         INSERT INTO quizzes (
@@ -34,8 +40,10 @@ export class QuizCreationService extends BaseService {
           color_text_hover,
           creation_date,
           user_id,
-          custom_domain
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          custom_domain,
+          facebook_pixel_id,
+          facebook_access_token_encrypted
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING quiz_id
       `, [
         data.quiz_name,
@@ -48,7 +56,9 @@ export class QuizCreationService extends BaseService {
         data.color_text_hover,
         new Date(),
         userId,
-        data.custom_domain || null
+        data.custom_domain || null,
+        data.facebook_pixel_id || null,
+        encryptedToken
       ]);
 
       const quizId = quizResult.rows[0].quiz_id;
@@ -285,6 +295,11 @@ export class QuizCreationService extends BaseService {
 
       console.log(`✅ Quiz data fetched for editing (quiz ${quizId}): ${questions.length} questions`);
 
+      // Decrypt access token for editing (if present)
+      const decryptedToken = quiz.facebook_access_token_encrypted
+        ? facebookPixelService.decryptToken(quiz.facebook_access_token_encrypted)
+        : null;
+
       return {
         quiz_id: quiz.quiz_id,
         quiz_name: quiz.quiz_name,
@@ -296,6 +311,8 @@ export class QuizCreationService extends BaseService {
         color_text_default: quiz.color_text_default,
         color_text_hover: quiz.color_text_hover,
         custom_domain: quiz.custom_domain,
+        facebook_pixel_id: quiz.facebook_pixel_id,
+        facebook_access_token: decryptedToken, // Return decrypted token for editing
         questions
       };
 
@@ -350,6 +367,11 @@ export class QuizCreationService extends BaseService {
         sequenceOrders.add(question.sequence_order);
       }
 
+      // Encrypt Facebook access token if provided
+      const encryptedToken = data.facebook_access_token 
+        ? facebookPixelService.encryptToken(data.facebook_access_token)
+        : null;
+
       // Update quiz base info
       await client.query(`
         UPDATE quizzes SET
@@ -361,8 +383,10 @@ export class QuizCreationService extends BaseService {
           color_secondary = $6,
           color_text_default = $7,
           color_text_hover = $8,
-          custom_domain = $9
-        WHERE quiz_id = $10
+          custom_domain = $9,
+          facebook_pixel_id = $10,
+          facebook_access_token_encrypted = $11
+        WHERE quiz_id = $12
       `, [
         data.quiz_name,
         data.product_page_url,
@@ -373,6 +397,8 @@ export class QuizCreationService extends BaseService {
         data.color_text_default,
         data.color_text_hover,
         data.custom_domain || null,
+        data.facebook_pixel_id || null,
+        encryptedToken,
         quizId
       ]);
       console.log(`✅ Quiz base info updated for quiz ID: ${quizId}`);

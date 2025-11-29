@@ -1,6 +1,8 @@
 export interface SessionStartRequest {
   quiz_id: string;
   utm_params?: Record<string, string>;
+  fbp?: string | null; // Facebook Browser ID from _fbp cookie
+  fbc?: string | null; // Facebook Click ID from _fbc cookie
 }
 
 export interface SessionStartResponse {
@@ -27,6 +29,7 @@ export interface AnswerSubmissionRequest {
 
 export interface AnswerSubmissionResponse {
   success: boolean;
+  answer_id: string; // UUID of the submitted answer
   message: string;
 }
 
@@ -104,6 +107,8 @@ export interface QuizCreationRequest {
   color_text_default: string;
   color_text_hover: string;
   custom_domain?: string | null;
+  facebook_pixel_id?: string | null;
+  facebook_access_token?: string | null; // Plain text token (will be encrypted before storing)
   questions: QuizCreationQuestion[];
 }
 

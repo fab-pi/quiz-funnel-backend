@@ -13,9 +13,9 @@ export class QuizContentService extends BaseService {
     const client = await this.pool.connect();
     
     try {
-      // Get quiz info
+      // Get quiz info (including Facebook Pixel ID)
       const quizResult = await client.query(
-        'SELECT quiz_id, quiz_name, product_page_url, is_active, brand_logo_url, color_primary, color_secondary, color_text_default, color_text_hover FROM quizzes WHERE quiz_id = $1',
+        'SELECT quiz_id, quiz_name, product_page_url, is_active, brand_logo_url, color_primary, color_secondary, color_text_default, color_text_hover, facebook_pixel_id FROM quizzes WHERE quiz_id = $1',
         [parseInt(quizId)]
       );
 
@@ -103,6 +103,7 @@ export class QuizContentService extends BaseService {
         color_secondary: quiz.color_secondary,
         color_text_default: quiz.color_text_default,
         color_text_hover: quiz.color_text_hover,
+        facebook_pixel_id: quiz.facebook_pixel_id, // Include Pixel ID for frontend initialization
         questions
       };
 
