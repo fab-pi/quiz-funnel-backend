@@ -116,7 +116,7 @@ export class QuizCreationService extends BaseService {
         const questionId = questionResult.rows[0].question_id;
         console.log(`✅ Question created with ID: ${questionId}`);
 
-        // Insert options (skip for fake_loader and info_screen)
+        // Insert options (all question types can have options now)
         const createdOptions = [];
         if (question.options && question.options.length > 0) {
           for (const option of question.options) {
