@@ -213,11 +213,11 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
     }
@@ -411,11 +411,11 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -503,11 +503,11 @@ router.get('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -571,11 +571,11 @@ router.get('/admin/quiz-summary', authenticate, async (req: AuthRequest, res: Re
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;

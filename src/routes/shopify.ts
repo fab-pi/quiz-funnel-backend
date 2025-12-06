@@ -39,11 +39,15 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
 
     const shopify = shopifyService.getShopifyApi();
 
+    // Get callback URL from environment or construct it
+    const callbackUrl = process.env.SHOPIFY_CALLBACK_URL || 'https://api.try-directquiz.com/api/shopify/auth/callback';
+    console.log(`   📍 Using callback URL: ${callbackUrl}`);
+
     // Begin OAuth flow
     // This will redirect to Shopify's OAuth page
     const authRoute = await shopify.auth.begin({
       shop,
-      callbackPath: '/api/shopify/auth/callback',
+      callbackPath: callbackUrl.replace(/^https?:\/\/[^\/]+/, ''), // Extract path from full URL
       isOnline: false, // Use offline access tokens (persistent)
       rawRequest: req,
       rawResponse: res,

@@ -244,7 +244,7 @@ export class QuizCreationService extends BaseService {
       } else if (userId !== null) {
         // Native user - check user ownership
         if (quiz.user_id !== userId) {
-          throw new Error('Unauthorized: You do not own this quiz');
+        throw new Error('Unauthorized: You do not own this quiz');
         }
       } else {
         throw new Error('Unauthorized: Authentication required');
@@ -385,7 +385,7 @@ export class QuizCreationService extends BaseService {
       } else if (userId !== null) {
         // Native user - check user ownership
         if (quiz.user_id !== userId) {
-          throw new Error('Unauthorized: You do not own this quiz');
+        throw new Error('Unauthorized: You do not own this quiz');
         }
       } else {
         throw new Error('Unauthorized: Authentication required');

@@ -32,8 +32,8 @@ export class AdminService extends BaseService {
           queryParams = [shopId];
         } else if (userId !== null) {
           // Native user - filter by user_id
-          whereClause = 'WHERE q.user_id = $1';
-          queryParams = [userId];
+        whereClause = 'WHERE q.user_id = $1';
+        queryParams = [userId];
         } else {
           // No auth - shouldn't happen but handle gracefully
           whereClause = 'WHERE 1 = 0'; // Return no results
