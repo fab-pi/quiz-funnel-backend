@@ -44,8 +44,9 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     console.log(`   📍 Using callback URL: ${callbackUrl}`);
 
     // Begin OAuth flow
-    // This will redirect to Shopify's OAuth page
-    const authRoute = await shopify.auth.begin({
+    // Note: auth.begin() handles the redirect internally via rawResponse
+    // We should NOT call res.redirect() after this
+    await shopify.auth.begin({
       shop,
       callbackPath: callbackUrl.replace(/^https?:\/\/[^\/]+/, ''), // Extract path from full URL
       isOnline: false, // Use offline access tokens (persistent)
@@ -53,8 +54,7 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
       rawResponse: res,
     });
 
-    // Redirect to Shopify OAuth page
-    res.redirect(authRoute);
+    // auth.begin() already sent the redirect, so we don't need to do anything here
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
