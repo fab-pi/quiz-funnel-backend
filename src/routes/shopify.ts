@@ -43,18 +43,28 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     const callbackUrl = process.env.SHOPIFY_CALLBACK_URL || 'https://api.try-directquiz.com/api/shopify/auth/callback';
     console.log(`   📍 Using callback URL: ${callbackUrl}`);
 
-    // Begin OAuth flow
-    // Note: auth.begin() handles the redirect internally via rawResponse
-    // We should NOT call res.redirect() after this
-    await shopify.auth.begin({
-      shop,
-      callbackPath: callbackUrl.replace(/^https?:\/\/[^\/]+/, ''), // Extract path from full URL
-      isOnline: false, // Use offline access tokens (persistent)
-      rawRequest: req,
-      rawResponse: res,
-    });
+    // Get API key and secret for manual OAuth URL construction
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    const scopes = process.env.SHOPIFY_SCOPES?.split(',').map(s => s.trim()).join(',') || 'read_products,write_products';
+    
+    if (!apiKey) {
+      return res.status(500).json({
+        success: false,
+        message: 'SHOPIFY_API_KEY is not configured'
+      });
+    }
 
-    // auth.begin() already sent the redirect, so we don't need to do anything here
+    // Manually construct OAuth URL with correct redirect_uri
+    // This ensures we use the backend domain (api.try-directquiz.com) instead of frontend domain
+    const shopifyOAuthUrl = `https://${shop}/admin/oauth/authorize?` +
+      `client_id=${apiKey}&` +
+      `scope=${encodeURIComponent(scopes)}&` +
+      `redirect_uri=${encodeURIComponent(callbackUrl)}`;
+
+    console.log(`   🔗 Redirecting to Shopify OAuth: ${shopifyOAuthUrl.replace(/client_id=[^&]+/, 'client_id=***')}`);
+    
+    // Redirect to Shopify OAuth page
+    res.redirect(shopifyOAuthUrl);
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
