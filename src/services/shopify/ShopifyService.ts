@@ -1,0 +1,267 @@
+import { Pool } from 'pg';
+import { shopifyApi, LATEST_API_VERSION, ApiVersion } from '@shopify/shopify-api';
+import '@shopify/shopify-api/adapters/node';
+import { BaseService } from '../BaseService';
+import { Shop, ShopDatabaseRow, StoreShopRequest } from '../../types/shopify';
+
+/**
+ * Shopify Service
+ * Handles Shopify OAuth, shop storage, and API interactions
+ */
+export class ShopifyService extends BaseService {
+  private shopify;
+
+  constructor(pool: Pool) {
+    super(pool);
+
+    // Validate required environment variables
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    const appUrl = process.env.SHOPIFY_APP_URL;
+
+    if (!apiKey || !apiSecret || !appUrl) {
+      throw new Error(
+        'Missing required Shopify environment variables: SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SHOPIFY_APP_URL'
+      );
+    }
+
+    // Get scopes from environment or use defaults
+    const scopes = process.env.SHOPIFY_SCOPES?.split(',').map(s => s.trim()) || [
+      'read_products',
+      'write_products',
+    ];
+
+    // Get API version from environment or use latest
+    const apiVersion = (process.env.SHOPIFY_API_VERSION as ApiVersion) || LATEST_API_VERSION;
+
+    // Extract hostname from app URL (remove protocol)
+    const hostName = appUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // Initialize Shopify API client
+    this.shopify = shopifyApi({
+      apiKey,
+      apiSecretKey: apiSecret,
+      scopes,
+      hostName,
+      apiVersion,
+      isEmbeddedApp: true,
+    });
+
+    console.log('✅ Shopify API client initialized');
+    console.log(`   API Version: ${apiVersion}`);
+    console.log(`   Scopes: ${scopes.join(', ')}`);
+    console.log(`   Host: ${hostName}`);
+  }
+
+  /**
+   * Store shop information after successful OAuth
+   */
+  async storeShop(data: StoreShopRequest): Promise<Shop> {
+    const client = await this.pool.connect();
+
+    try {
+      // Check if shop already exists
+      const existingShop = await client.query<ShopDatabaseRow>(
+        'SELECT * FROM shops WHERE shop_domain = $1',
+        [data.shopDomain]
+      );
+
+      if (existingShop.rows.length > 0) {
+        // Update existing shop (reinstall scenario)
+        const result = await client.query<ShopDatabaseRow>(
+          `UPDATE shops 
+           SET access_token = $1, 
+               scope = $2, 
+               installed_at = CURRENT_TIMESTAMP,
+               uninstalled_at = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE shop_domain = $3
+           RETURNING *`,
+          [data.accessToken, data.scope, data.shopDomain]
+        );
+
+        console.log(`✅ Shop updated: ${data.shopDomain}`);
+        return this.mapShopFromDatabase(result.rows[0]);
+      } else {
+        // Insert new shop
+        const result = await client.query<ShopDatabaseRow>(
+          `INSERT INTO shops (shop_domain, access_token, scope, installed_at)
+           VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+           RETURNING *`,
+          [data.shopDomain, data.accessToken, data.scope]
+        );
+
+        console.log(`✅ Shop stored: ${data.shopDomain}`);
+        return this.mapShopFromDatabase(result.rows[0]);
+      }
+    } catch (error: any) {
+      console.error('❌ Error storing shop:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get shop access token by shop domain
+   */
+  async getShopAccessToken(shopDomain: string): Promise<string | null> {
+    const client = await this.pool.connect();
+
+    try {
+      const result = await client.query<ShopDatabaseRow>(
+        `SELECT access_token FROM shops 
+         WHERE shop_domain = $1 AND uninstalled_at IS NULL`,
+        [shopDomain]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return result.rows[0].access_token;
+    } catch (error) {
+      console.error('❌ Error getting shop access token:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get shop by domain
+   */
+  async getShopByDomain(shopDomain: string): Promise<Shop | null> {
+    const client = await this.pool.connect();
+
+    try {
+      const result = await client.query<ShopDatabaseRow>(
+        'SELECT * FROM shops WHERE shop_domain = $1',
+        [shopDomain]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return this.mapShopFromDatabase(result.rows[0]);
+    } catch (error) {
+      console.error('❌ Error getting shop:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get shop by ID
+   */
+  async getShopById(shopId: number): Promise<Shop | null> {
+    const client = await this.pool.connect();
+
+    try {
+      const result = await client.query<ShopDatabaseRow>(
+        'SELECT * FROM shops WHERE shop_id = $1',
+        [shopId]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return this.mapShopFromDatabase(result.rows[0]);
+    } catch (error) {
+      console.error('❌ Error getting shop by ID:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Handle app uninstall - mark shop as uninstalled
+   */
+  async uninstallShop(shopDomain: string): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query(
+        `UPDATE shops 
+         SET uninstalled_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE shop_domain = $1`,
+        [shopDomain]
+      );
+
+      console.log(`✅ Shop marked as uninstalled: ${shopDomain}`);
+    } catch (error) {
+      console.error('❌ Error uninstalling shop:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get Shopify API instance (for use in routes)
+   */
+  getShopifyApi() {
+    return this.shopify;
+  }
+
+  /**
+   * Create a Shopify GraphQL client for a shop
+   * Note: This is a simplified version. For full implementation,
+   * you may need to implement custom session storage.
+   * For now, these methods are placeholders for future implementation.
+   */
+  async createGraphQLClient(shop: string, accessToken: string) {
+    // Create a custom session for GraphQL requests
+    // Note: In production, you should implement proper session storage
+    const session = this.shopify.session.customAppSession(shop);
+    (session as any).accessToken = accessToken;
+    
+    return new this.shopify.clients.Graphql({ session });
+  }
+
+  /**
+   * Get shop information from Shopify API
+   * Note: This requires proper session storage implementation
+   * For now, this is a placeholder for future implementation
+   */
+  async getShopInfo(shop: string, accessToken: string): Promise<any> {
+    // TODO: Implement proper GraphQL client with session storage
+    // For now, return null - this can be implemented in a future phase
+    console.warn('⚠️ getShopInfo not yet fully implemented - requires session storage');
+    return null;
+  }
+
+  /**
+   * Get products from Shopify store
+   * Note: This requires proper session storage implementation
+   * For now, this is a placeholder for future implementation
+   */
+  async getProducts(shop: string, accessToken: string, limit: number = 10): Promise<any[]> {
+    // TODO: Implement proper GraphQL client with session storage
+    // For now, return empty array - this can be implemented in a future phase
+    console.warn('⚠️ getProducts not yet fully implemented - requires session storage');
+    return [];
+  }
+
+  /**
+   * Map database row to Shop interface
+   */
+  private mapShopFromDatabase(row: ShopDatabaseRow): Shop {
+    return {
+      shopId: row.shop_id,
+      shopDomain: row.shop_domain,
+      accessToken: row.access_token,
+      scope: row.scope,
+      installedAt: row.installed_at,
+      uninstalledAt: row.uninstalled_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+}
+

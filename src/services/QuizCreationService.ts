@@ -11,9 +11,10 @@ export class QuizCreationService extends BaseService {
   /**
    * Create a new quiz with full structure
    * @param data - Quiz creation data
-   * @param userId - ID of the user creating the quiz (from authenticated user)
+   * @param userId - ID of the user creating the quiz (from authenticated user, null for Shopify)
+   * @param shopId - ID of the Shopify shop (optional, for Shopify users)
    */
-  async createQuiz(data: QuizCreationRequest, userId: number): Promise<QuizCreationResponse> {
+  async createQuiz(data: QuizCreationRequest, userId: number | null, shopId?: number | null): Promise<QuizCreationResponse> {
     const client = await this.pool.connect();
     
     try {
@@ -27,7 +28,9 @@ export class QuizCreationService extends BaseService {
         ? facebookPixelService.encryptToken(data.facebook_access_token)
         : null;
 
-      // Insert quiz with user_id
+      // Insert quiz with user_id and/or shop_id
+      // Note: For Shopify users, shopId is set and userId is null
+      // For native users, userId is set and shopId is null
       const quizResult = await client.query(`
         INSERT INTO quizzes (
           quiz_name, 
@@ -40,10 +43,11 @@ export class QuizCreationService extends BaseService {
           color_text_hover,
           creation_date,
           user_id,
+          shop_id,
           custom_domain,
           facebook_pixel_id,
           facebook_access_token_encrypted
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING quiz_id
       `, [
         data.quiz_name,
@@ -56,6 +60,7 @@ export class QuizCreationService extends BaseService {
         data.color_text_hover,
         new Date(),
         userId,
+        shopId || null,
         data.custom_domain || null,
         data.facebook_pixel_id || null,
         encryptedToken
@@ -193,14 +198,15 @@ export class QuizCreationService extends BaseService {
   /**
    * Get quiz data for editing (includes inactive quizzes)
    * @param quizId - Quiz ID to fetch
-   * @param userId - ID of the user requesting (for ownership check)
+   * @param userId - ID of the user requesting (for ownership check, null for Shopify)
    * @param userRole - Role of the user ('user' or 'admin')
+   * @param shopId - ID of the Shopify shop (optional, for Shopify users)
    */
-  async getQuizForEditing(quizId: number, userId: number, userRole: 'user' | 'admin'): Promise<any> {
+  async getQuizForEditing(quizId: number, userId: number | null, userRole: 'user' | 'admin', shopId?: number | null): Promise<any> {
     const client = await this.pool.connect();
     
     try {
-      // Get quiz info with user_id (no is_active check)
+      // Get quiz info with user_id and shop_id (no is_active check)
       const quizResult = await client.query(
         `SELECT 
           quiz_id, 
@@ -213,6 +219,7 @@ export class QuizCreationService extends BaseService {
           color_text_default, 
           color_text_hover,
           user_id,
+          shop_id,
           custom_domain
         FROM quizzes 
         WHERE quiz_id = $1`,
@@ -225,9 +232,22 @@ export class QuizCreationService extends BaseService {
 
       const quiz = quizResult.rows[0];
 
-      // Check ownership (admin can access any quiz, users can only access their own)
-      if (userRole !== 'admin' && quiz.user_id !== userId) {
-        throw new Error('Unauthorized: You do not own this quiz');
+      // Check ownership
+      // Admin can access any quiz
+      if (userRole === 'admin') {
+        // Admin can access any quiz
+      } else if (shopId !== undefined && shopId !== null) {
+        // Shopify user - check shop ownership
+        if (quiz.shop_id !== shopId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else if (userId !== null) {
+        // Native user - check user ownership
+        if (quiz.user_id !== userId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else {
+        throw new Error('Unauthorized: Authentication required');
       }
 
       // Get questions and options (only active, not archived)
@@ -332,18 +352,18 @@ export class QuizCreationService extends BaseService {
    * @param userId - ID of the user updating (for ownership check)
    * @param userRole - Role of the user ('user' or 'admin')
    */
-  async updateQuiz(quizId: number, data: QuizCreationRequest, userId: number, userRole: 'user' | 'admin'): Promise<QuizCreationResponse> {
+  async updateQuiz(quizId: number, data: QuizCreationRequest, userId: number | null, userRole: 'user' | 'admin', shopId?: number | null): Promise<QuizCreationResponse> {
     const client = await this.pool.connect();
     
     try {
       // Start transaction
       await client.query('BEGIN');
 
-      console.log(`🔄 Starting quiz update transaction for quiz ID: ${quizId} by user ${userId}...`);
+      console.log(`🔄 Starting quiz update transaction for quiz ID: ${quizId} by user ${userId || 'shopify'}...`);
 
       // Verify quiz exists and check ownership
       const quizCheckResult = await client.query(
-        'SELECT quiz_id, user_id FROM quizzes WHERE quiz_id = $1',
+        'SELECT quiz_id, user_id, shop_id FROM quizzes WHERE quiz_id = $1',
         [quizId]
       );
 
@@ -353,9 +373,22 @@ export class QuizCreationService extends BaseService {
 
       const quiz = quizCheckResult.rows[0];
 
-      // Check ownership (admin can update any quiz, users can only update their own)
-      if (userRole !== 'admin' && quiz.user_id !== userId) {
-        throw new Error('Unauthorized: You do not own this quiz');
+      // Check ownership
+      // Admin can update any quiz
+      if (userRole === 'admin') {
+        // Admin can update any quiz
+      } else if (shopId !== undefined && shopId !== null) {
+        // Shopify user - check shop ownership
+        if (quiz.shop_id !== shopId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else if (userId !== null) {
+        // Native user - check user ownership
+        if (quiz.user_id !== userId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else {
+        throw new Error('Unauthorized: Authentication required');
       }
 
       // VALIDATION 1: Check that sequence_order values are unique (only among active questions)

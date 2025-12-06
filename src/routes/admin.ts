@@ -74,9 +74,10 @@ console.log('  - GET /admin/quiz/:quizId');
 console.log('  - GET /admin/quiz/:quizId/dns-instructions');
 console.log('  - GET /admin/quiz/:quizId/verify-domain');
 console.log('  - GET /admin/quiz-summary');
+console.log('  - GET /admin/user-context');
 
 // POST /admin/quiz - Create new quiz with full structure
-// Protected: Requires authentication (user or admin can create quizzes)
+// Protected: Requires authentication (user or admin can create quizzes, Shopify shops can create quizzes)
 router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const data: QuizCreationRequest = req.body;
@@ -86,6 +87,14 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: quiz_name, product_page_url, and questions array are required'
+      });
+    }
+
+    // Block custom_domain for Shopify users
+    if (req.authType === 'shopify' && data.custom_domain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Custom domains are not available for Shopify apps. Use the default quiz URL instead.'
       });
     }
 
@@ -189,15 +198,31 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
       }
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId and shopId based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
     }
 
-    const result = await quizCreationService.createQuiz(data, req.user.userId);
+    const result = await quizCreationService.createQuiz(data, userId, shopId);
     res.status(201).json(result);
 
   } catch (error: any) {
@@ -257,7 +282,15 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       });
     }
 
-    // Validate custom_domain if provided
+    // Block custom_domain for Shopify users
+    if (req.authType === 'shopify' && data.custom_domain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Custom domains are not available for Shopify apps. Use the default quiz URL instead.'
+      });
+    }
+
+    // Validate custom_domain if provided (native users only)
     if (data.custom_domain) {
       const domainValidation = validateDomain(data.custom_domain);
       if (!domainValidation.isValid) {
@@ -362,19 +395,38 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       }
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId and shopId based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' = 'user';
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await quizCreationService.updateQuiz(
       parseInt(quizId), 
       data, 
-      req.user.userId, 
-      req.user.role
+      userId, 
+      userRole,
+      shopId
     );
     res.status(200).json(result);
 
@@ -435,18 +487,37 @@ router.get('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId and shopId based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' = 'user';
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const quizData = await quizCreationService.getQuizForEditing(
       parseInt(quizId), 
-      req.user.userId, 
-      req.user.role
+      userId, 
+      userRole,
+      shopId
     );
     
     res.status(200).json({
@@ -480,30 +551,49 @@ router.get('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
 });
 
 // GET /admin/quiz-summary - Get summary metrics for quizzes
-// Protected: Requires authentication (user sees own quizzes, admin can see all or own)
-// Query params: ?viewMode=all|my (admin only, defaults to 'all' for admin, 'my' for users)
+// Protected: Requires authentication (user sees own quizzes, admin can see all or own, Shopify shops see own quizzes)
+// Query params: ?viewMode=all|my (admin only, defaults to 'all' for admin, 'my' for users/shops)
 router.get('/admin/quiz-summary', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' = 'user';
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const viewMode = req.query.viewMode as string || 'all';
     
-    // For regular users, always use 'my' (ignore query param for security)
-    const effectiveViewMode = req.user.role === 'admin' ? viewMode : 'my';
-    const showAll = req.user.role === 'admin' && effectiveViewMode === 'all';
+    // For regular users/shops, always use 'my' (ignore query param for security)
+    const effectiveViewMode = userRole === 'admin' ? viewMode : 'my';
+    const showAll = userRole === 'admin' && effectiveViewMode === 'all';
 
-    console.log(`📊 Fetching quiz summary metrics for user ${req.user.userId} (viewMode: ${effectiveViewMode})...`);
+    console.log(`📊 Fetching quiz summary metrics for ${userId ? `user ${userId}` : `shop ${shopId}`} (viewMode: ${effectiveViewMode})...`);
     
     const summaryMetrics = await adminService.getQuizSummaryMetrics(
-      req.user.userId, 
-      req.user.role,
-      showAll
+      userId, 
+      userRole,
+      showAll,
+      shopId
     );
     
     res.json({
@@ -871,6 +961,69 @@ router.patch('/admin/quiz/:quizId/facebook-pixel', authenticate, async (req: Aut
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to update Facebook Pixel configuration'
+    });
+  }
+});
+
+// GET /admin/user-context - Get current user/shop context
+// Protected: Requires authentication (returns user or shop info based on auth type)
+router.get('/admin/user-context', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.authType === 'shopify') {
+      // Shopify user context
+      if (!req.shop || !req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          authType: 'shopify',
+          shop: {
+            shopId: req.shopId,
+            shopDomain: req.shop
+          },
+          features: {
+            customDomain: false, // Shopify apps don't support custom domains
+            facebookPixel: true,
+            analytics: true
+          }
+        }
+      });
+    } else {
+      // Native user context
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          authType: 'native',
+          user: {
+            userId: req.user.userId,
+            email: req.user.email,
+            role: req.user.role
+          },
+          features: {
+            customDomain: true, // Native users can use custom domains
+            facebookPixel: true,
+            analytics: true
+          }
+        }
+      });
+    }
+  } catch (error: any) {
+    console.error('❌ Error fetching user context:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user context'
     });
   }
 });

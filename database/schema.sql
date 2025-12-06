@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS email_tokens CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS quizzes CASCADE;
+DROP TABLE IF EXISTS shops CASCADE;
 
 -- Create users table (authentication)
 CREATE TABLE users (
@@ -63,6 +64,21 @@ CREATE TABLE email_tokens (
     )
 );
 
+-- Create shops table (Shopify app support)
+CREATE TABLE shops (
+    shop_id SERIAL PRIMARY KEY,
+    shop_domain VARCHAR(255) UNIQUE NOT NULL,
+    access_token TEXT NOT NULL,
+    scope TEXT,
+    installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uninstalled_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_uninstalled_after_installed CHECK (
+        uninstalled_at IS NULL OR uninstalled_at >= installed_at
+    )
+);
+
 -- Create quizzes table
 CREATE TABLE quizzes (
     quiz_id SERIAL PRIMARY KEY,
@@ -77,6 +93,7 @@ CREATE TABLE quizzes (
     color_text_hover VARCHAR(7), -- Hex color code
     quiz_start_url VARCHAR(500),
     user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    shop_id INTEGER REFERENCES shops(shop_id) ON DELETE SET NULL,
     custom_domain VARCHAR(255), -- Custom domain/subdomain for this quiz (e.g., shop.brandx.com)
     facebook_pixel_id VARCHAR(50), -- Facebook Pixel ID for tracking events
     facebook_access_token_encrypted TEXT -- Encrypted Facebook Conversions API access token
@@ -168,6 +185,19 @@ CREATE INDEX idx_quizzes_user_active ON quizzes(user_id, is_active)
 CREATE INDEX idx_quizzes_facebook_pixel ON quizzes(facebook_pixel_id) 
     WHERE facebook_pixel_id IS NOT NULL;
 
+-- Shops table indexes
+CREATE UNIQUE INDEX idx_shops_domain ON shops(shop_domain);
+CREATE INDEX idx_shops_installed ON shops(shop_domain) 
+    WHERE uninstalled_at IS NULL;
+CREATE INDEX idx_shops_uninstalled ON shops(uninstalled_at) 
+    WHERE uninstalled_at IS NOT NULL;
+
+-- Quizzes table indexes for shop_id
+CREATE INDEX idx_quizzes_shop_id ON quizzes(shop_id) 
+    WHERE shop_id IS NOT NULL;
+CREATE INDEX idx_quizzes_shop_active ON quizzes(shop_id, is_active) 
+    WHERE shop_id IS NOT NULL AND is_active = true;
+
 -- Indexes for soft delete (is_archived) filtering
 CREATE INDEX idx_questions_is_archived ON questions(is_archived) WHERE is_archived = false;
 CREATE INDEX idx_answer_options_is_archived ON answer_options(is_archived) WHERE is_archived = false;
@@ -193,6 +223,12 @@ $$ language 'plpgsql';
 -- Create trigger for users table
 CREATE TRIGGER update_users_updated_at 
     BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create trigger for shops table
+CREATE TRIGGER update_shops_updated_at 
+    BEFORE UPDATE ON shops
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -226,6 +262,7 @@ WHERE is_archived = false OR is_archived IS NULL;
 COMMENT ON TABLE users IS 'User accounts with authentication and authorization';
 COMMENT ON TABLE refresh_tokens IS 'JWT refresh tokens for session management';
 COMMENT ON TABLE email_tokens IS 'One-time tokens for email verification and password reset';
+COMMENT ON TABLE shops IS 'Shopify shops that have installed the app';
 COMMENT ON TABLE quizzes IS 'Stores quiz definitions and configuration';
 COMMENT ON TABLE questions IS 'Stores questions for each quiz';
 COMMENT ON TABLE answer_options IS 'Stores answer options for each question';
@@ -240,7 +277,13 @@ COMMENT ON COLUMN refresh_tokens.revoked_at IS 'Timestamp when token was revoked
 COMMENT ON COLUMN email_tokens.token IS 'Plain text token for one-time use (minimum 32 characters)';
 COMMENT ON COLUMN email_tokens.token_type IS 'Type of token: email_verification or password_reset';
 COMMENT ON COLUMN email_tokens.used_at IS 'Timestamp when token was used (NULL if not used yet)';
+COMMENT ON COLUMN shops.shop_domain IS 'Shop domain (e.g., mystore.myshopify.com)';
+COMMENT ON COLUMN shops.access_token IS 'Shopify OAuth access token (should be encrypted in production)';
+COMMENT ON COLUMN shops.scope IS 'Comma-separated list of granted OAuth scopes';
+COMMENT ON COLUMN shops.installed_at IS 'Timestamp when app was installed';
+COMMENT ON COLUMN shops.uninstalled_at IS 'Timestamp when app was uninstalled (NULL if currently installed)';
 COMMENT ON COLUMN quizzes.user_id IS 'Owner of the quiz. NULL for legacy quizzes';
+COMMENT ON COLUMN quizzes.shop_id IS 'Shopify shop that owns this quiz (NULL for standalone/native user quizzes)';
 COMMENT ON COLUMN quizzes.color_primary IS 'Primary color hex code (e.g., #FF5733)';
 COMMENT ON COLUMN quizzes.color_secondary IS 'Secondary color hex code (e.g., #33FF57)';
 COMMENT ON COLUMN quizzes.color_text_default IS 'Default text color hex code';

@@ -8,25 +8,36 @@ export class AdminService extends BaseService {
 
   /**
    * Get summary metrics for quizzes
-   * @param userId - ID of the user requesting (for filtering)
+   * @param userId - ID of the user requesting (for filtering, null for Shopify)
    * @param userRole - Role of the user ('user' or 'admin')
-   * @param showAll - If true and user is admin, show all quizzes. If false, show only user's quizzes.
+   * @param showAll - If true and user is admin, show all quizzes. If false, show only user's/shop's quizzes.
+   * @param shopId - ID of the Shopify shop (optional, for Shopify users)
    */
-  async getQuizSummaryMetrics(userId: number, userRole: 'user' | 'admin', showAll: boolean = false): Promise<any[]> {
+  async getQuizSummaryMetrics(userId: number | null, userRole: 'user' | 'admin', showAll: boolean = false, shopId?: number | null): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      console.log(`📊 Fetching quiz summary metrics for user ${userId} (role: ${userRole}, showAll: ${showAll})...`);
+      console.log(`📊 Fetching quiz summary metrics for user ${userId || 'shopify'} (role: ${userRole}, showAll: ${showAll}, shopId: ${shopId || 'none'})...`);
       
-      // Build query with optional user filter
+      // Build query with optional user/shop filter
       let whereClause = '';
       let queryParams: any[] = [];
 
       if (userRole !== 'admin' || !showAll) {
-        // Regular users always see their own quizzes
+        // Regular users/shops see their own quizzes
         // Admins see their own if showAll is false
-        whereClause = 'WHERE q.user_id = $1';
-        queryParams = [userId];
+        if (shopId !== undefined && shopId !== null) {
+          // Shopify user - filter by shop_id
+          whereClause = 'WHERE q.shop_id = $1';
+          queryParams = [shopId];
+        } else if (userId !== null) {
+          // Native user - filter by user_id
+          whereClause = 'WHERE q.user_id = $1';
+          queryParams = [userId];
+        } else {
+          // No auth - shouldn't happen but handle gracefully
+          whereClause = 'WHERE 1 = 0'; // Return no results
+        }
       }
       // Admin sees all quizzes when showAll is true (no WHERE clause)
       
@@ -38,6 +49,7 @@ export class AdminService extends BaseService {
           q.quiz_start_url,
           q.is_active,
           q.user_id,
+          q.shop_id,
           q.custom_domain,
           COUNT(DISTINCT us.session_id) as quiz_starts,
           COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as quiz_completions,
@@ -55,7 +67,7 @@ export class AdminService extends BaseService {
         LEFT JOIN questions qu ON q.quiz_id = qu.quiz_id
           AND (qu.is_archived = false OR qu.is_archived IS NULL)
         ${whereClause}
-        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id, q.custom_domain
+        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id, q.shop_id, q.custom_domain
         ORDER BY q.quiz_id DESC
       `, queryParams);
       

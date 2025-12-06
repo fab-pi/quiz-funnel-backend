@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { TokenPayload } from '../types';
+import { shopifyAuthenticate, ShopifyRequest } from './shopifyAuth';
 
 /**
- * Extended Request interface with user property
+ * Extended Request interface with user property and Shopify support
  */
 export interface AuthRequest extends Request {
   user?: {
@@ -11,18 +12,34 @@ export interface AuthRequest extends Request {
     email: string;
     role: 'user' | 'admin';
   };
+  shop?: string;
+  shopId?: number;
+  authType?: 'native' | 'shopify';
 }
 
 /**
  * Authentication middleware
- * Verifies JWT token from Authorization header and adds user info to request
+ * Supports both JWT (native) and Shopify session authentication
+ * Automatically detects auth type and routes to appropriate handler
  */
-export const authenticate = (
+export const authenticate = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   try {
+    // Check if this is a Shopify request
+    const shopDomain = 
+      req.headers['x-shopify-shop-domain'] as string ||
+      req.query.shop as string;
+
+    if (shopDomain) {
+      // This is a Shopify request - use Shopify authentication
+      console.log(`🔄 Detected Shopify request for shop: ${shopDomain}`);
+      return shopifyAuthenticate(req as ShopifyRequest, res, next);
+    }
+
+    // Otherwise, use native JWT authentication
     const authHeader = req.headers.authorization;
 
     // Check if Authorization header exists and has correct format
@@ -75,6 +92,7 @@ export const authenticate = (
         email: decoded.email,
         role: decoded.role
       };
+      req.authType = 'native';
 
       // Continue to next middleware/route handler
       next();

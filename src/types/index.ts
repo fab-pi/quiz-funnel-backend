@@ -252,3 +252,6 @@ export interface ResendVerificationResponse {
   success: boolean;
   message: string;
 }
+
+// Re-export Shopify types
+export * from './shopify';

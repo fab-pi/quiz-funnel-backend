@@ -7,6 +7,7 @@ import adminRoutes from './routes/admin';
 import analyticsRoutes from './routes/analytics';
 import uploadRoutes from './routes/upload';
 import authRoutes from './routes/auth';
+import shopifyRoutes from './routes/shopify';
 import { errorHandler } from './middleware/errorHandler';
 import { iframeHeaders } from './middleware/iframeHeaders';
 
@@ -87,6 +88,7 @@ app.use('/api', authRoutes);        // Authentication
 app.use('/api', adminRoutes);        // Admin operations
 app.use('/api', analyticsRoutes);    // Analytics
 app.use('/api', uploadRoutes);       // File uploads
+app.use('/api', shopifyRoutes);      // Shopify OAuth and webhooks
 console.log('✅ All modular routes registered under /api');
 
 // 404 handler
