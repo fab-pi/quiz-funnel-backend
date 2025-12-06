@@ -84,40 +84,68 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
  */
 router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
   try {
-    const shopify = shopifyService.getShopifyApi();
+    const code = req.query.code as string;
+    const shop = req.query.shop as string;
+    const host = req.query.host as string;
 
-    console.log('🔄 Processing OAuth callback...');
-
-    // Handle OAuth callback
-    const callbackResponse = await shopify.auth.callback({
-      rawRequest: req,
-      rawResponse: res,
-    });
-
-    const { session } = callbackResponse;
-
-    if (!session || !session.shop || !session.accessToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'OAuth callback failed: Missing session data'
-      });
+    if (!code || !shop) {
+      throw new Error('Missing code or shop parameter in OAuth callback');
     }
 
-    console.log(`✅ OAuth successful for shop: ${session.shop}`);
+    console.log('🔄 Processing OAuth callback...');
+    console.log(`   Shop: ${shop}`);
+    console.log(`   Host: ${host || 'not provided'}`);
+
+    // Manually exchange authorization code for access token
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    const callbackUrl = process.env.SHOPIFY_CALLBACK_URL || 'https://api.try-directquiz.com/api/shopify/auth/callback';
+
+    if (!apiKey || !apiSecret) {
+      throw new Error('SHOPIFY_API_KEY or SHOPIFY_API_SECRET is not configured');
+    }
+
+    // Exchange code for access token using Shopify REST API
+    const tokenUrl = `https://${shop}/admin/oauth/access_token`;
+    
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: apiKey,
+        client_secret: apiSecret,
+        code: code,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
+    }
+
+    const tokenData = await tokenResponse.json() as { access_token: string; scope?: string };
+    const accessToken = tokenData.access_token;
+    const scope = tokenData.scope || '';
+
+    if (!accessToken) {
+      throw new Error('Failed to obtain access token from Shopify');
+    }
+
+    console.log(`✅ OAuth successful for shop: ${shop}`);
+    console.log(`   Access token obtained, scope: ${scope}`);
 
     // Store shop in database
     await shopifyService.storeShop({
-      shopDomain: session.shop,
-      accessToken: session.accessToken,
-      scope: session.scope || '',
+      shopDomain: shop,
+      accessToken: accessToken,
+      scope: scope,
     });
-
-    // Get host parameter for App Bridge (required for embedded apps)
-    const host = req.query.host as string;
 
     // Redirect to app
     const appUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
-    const redirectUrl = `${appUrl}/shopify?shop=${session.shop}${host ? `&host=${host}` : ''}`;
+    const redirectUrl = `${appUrl}/shopify?shop=${shop}${host ? `&host=${host}` : ''}`;
 
     console.log(`✅ Redirecting to app: ${redirectUrl}`);
     res.redirect(redirectUrl);
