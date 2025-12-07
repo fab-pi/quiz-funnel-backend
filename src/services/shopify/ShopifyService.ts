@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { shopifyApi, LATEST_API_VERSION, ApiVersion } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
+import crypto from 'crypto';
 import { BaseService } from '../BaseService';
 import { Shop, ShopDatabaseRow, StoreShopRequest } from '../../types/shopify';
 
@@ -246,6 +247,66 @@ export class ShopifyService extends BaseService {
     // For now, return empty array - this can be implemented in a future phase
     console.warn('⚠️ getProducts not yet fully implemented - requires session storage');
     return [];
+  }
+
+  /**
+   * Validate Shopify App Proxy request signature
+   * @param queryParams - Query parameters from the request
+   * @param shopDomain - Shop domain from the request
+   * @returns true if signature is valid, false otherwise
+   */
+  validateProxySignature(queryParams: Record<string, string | string[] | undefined>, shopDomain: string): boolean {
+    const signature = queryParams.signature as string | undefined;
+    
+    if (!signature) {
+      console.error('❌ App Proxy request missing signature');
+      return false;
+    }
+
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    if (!apiSecret) {
+      console.error('❌ SHOPIFY_API_SECRET is not configured');
+      return false;
+    }
+
+    // Build query string without signature parameter
+    const sortedParams: string[] = [];
+    for (const key in queryParams) {
+      if (key !== 'signature') {
+        const value = queryParams[key];
+        if (value !== undefined) {
+          const paramValue = Array.isArray(value) ? value[0] : value;
+          sortedParams.push(`${key}=${paramValue}`);
+        }
+      }
+    }
+    
+    // Sort parameters alphabetically
+    sortedParams.sort();
+    
+    // Build query string
+    const queryString = sortedParams.join('&');
+    
+    // Calculate HMAC
+    const calculatedSignature = crypto
+      .createHmac('sha256', apiSecret)
+      .update(queryString)
+      .digest('hex');
+    
+    // Compare signatures (use timing-safe comparison)
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(calculatedSignature)
+    );
+    
+    if (!isValid) {
+      console.error('❌ App Proxy signature validation failed');
+      console.error(`   Shop: ${shopDomain}`);
+      console.error(`   Expected: ${calculatedSignature}`);
+      console.error(`   Received: ${signature}`);
+    }
+    
+    return isValid;
   }
 
   /**

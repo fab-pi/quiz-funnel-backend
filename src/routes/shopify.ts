@@ -1,15 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
+import { QuizContentService } from '../services/QuizContentService';
 import pool from '../config/db';
 
 const router = Router();
 const shopifyService = new ShopifyService(pool);
+const quizContentService = new QuizContentService(pool);
 
 // Debug: Log route definitions
 console.log('🔧 Defining Shopify routes:');
 console.log('  - GET  /shopify/auth');
 console.log('  - GET  /shopify/auth/callback');
 console.log('  - POST /shopify/webhooks/app/uninstalled');
+console.log('  - GET  /shopify/proxy (App Proxy)');
 
 /**
  * GET /api/shopify/auth
@@ -203,6 +206,204 @@ router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Respo
       success: false,
       message: 'Webhook received but processing failed'
     });
+  }
+});
+
+/**
+ * GET /api/shopify/proxy
+ * Shopify App Proxy endpoint
+ * Handles requests from store.myshopify.com/apps/quiz/{quizId}
+ * Validates signature, verifies shop, and serves quiz content
+ */
+router.get('/shopify/proxy', async (req: Request, res: Response) => {
+  try {
+    // Extract shop domain from query parameters or headers
+    const shop = (req.query.shop as string) || req.get('X-Shopify-Shop-Domain');
+    
+    if (!shop) {
+      console.error('❌ App Proxy request missing shop parameter');
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body>
+          <h1>Error</h1>
+          <p>Missing shop parameter. Please ensure you're accessing this quiz from your Shopify store.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Validate shop domain format
+    if (!shop.includes('.myshopify.com') && !shop.includes('.')) {
+      console.error('❌ Invalid shop domain format:', shop);
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body>
+          <h1>Error</h1>
+          <p>Invalid shop domain format.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Validate Shopify signature
+    const isValidSignature = shopifyService.validateProxySignature(req.query as Record<string, string | string[] | undefined>, shop);
+    
+    if (!isValidSignature) {
+      console.error('❌ App Proxy signature validation failed for shop:', shop);
+      return res.status(401).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Unauthorized</title></head>
+        <body>
+          <h1>Unauthorized</h1>
+          <p>Invalid request signature. Please ensure you're accessing this quiz from your Shopify store.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Verify shop is installed
+    const shopData = await shopifyService.getShopByDomain(shop);
+    
+    if (!shopData) {
+      console.error('❌ Shop not found or not installed:', shop);
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>App Not Installed</title></head>
+        <body>
+          <h1>App Not Installed</h1>
+          <p>This app is not installed on your store. Please install the Direct Quiz app first.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    if (shopData.uninstalledAt) {
+      console.error('❌ Shop has uninstalled the app:', shop);
+      return res.status(403).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>App Uninstalled</title></head>
+        <body>
+          <h1>App Uninstalled</h1>
+          <p>This app has been uninstalled from your store. Please reinstall the Direct Quiz app.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Extract quiz ID from path
+    // Shopify sends the path after the subpath prefix in the 'path' query parameter
+    // Example: if subpath is 'quiz', URL is 'store.myshopify.com/apps/quiz/123'
+    // Shopify will send path='/123' or path='123' in query parameters
+    const path = (req.query.path as string || '').trim();
+    
+    // Remove leading slash if present and extract quiz ID
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    const quizIdMatch = cleanPath.match(/^(\d+)/); // Extract first number from path
+    
+    if (!quizIdMatch) {
+      console.error('❌ App Proxy request missing or invalid quiz ID in path:', path);
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body>
+          <h1>Error</h1>
+          <p>Invalid quiz ID. Please check the quiz URL.</p>
+          <p>Expected format: yourstore.myshopify.com/apps/quiz/123</p>
+        </body>
+        </html>
+      `);
+    }
+
+    const quizId = quizIdMatch[1];
+    console.log(`🔄 App Proxy request for shop: ${shop}, quiz: ${quizId}`);
+
+    // Verify quiz belongs to this shop
+    const client = await pool.connect();
+    try {
+      const quizCheck = await client.query(
+        'SELECT quiz_id, shop_id, is_active FROM quizzes WHERE quiz_id = $1',
+        [parseInt(quizId)]
+      );
+
+      if (quizCheck.rows.length === 0) {
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Quiz Not Found</title></head>
+          <body>
+            <h1>Quiz Not Found</h1>
+            <p>The requested quiz could not be found.</p>
+          </body>
+          </html>
+        `);
+      }
+
+      const quiz = quizCheck.rows[0];
+
+      // Verify quiz belongs to this shop
+      if (quiz.shop_id !== shopData.shopId) {
+        console.error(`❌ Quiz ${quizId} does not belong to shop ${shop}`);
+        return res.status(403).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Unauthorized</title></head>
+          <body>
+            <h1>Unauthorized</h1>
+            <p>You do not have access to this quiz.</p>
+          </body>
+          </html>
+        `);
+      }
+
+      // Check if quiz is active
+      if (!quiz.is_active) {
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Quiz Not Available</title></head>
+          <body>
+            <h1>Quiz Not Available</h1>
+            <p>This quiz is currently inactive.</p>
+          </body>
+          </html>
+        `);
+      }
+    } finally {
+      client.release();
+    }
+
+    // Get frontend URL from environment
+    const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
+    
+    // Redirect to frontend quiz page with shop context
+    // The frontend will handle rendering the quiz without store header/footer
+    const quizUrl = `${frontendUrl}/quiz/${quizId}?shop=${encodeURIComponent(shop)}&proxy=true`;
+    
+    console.log(`✅ App Proxy validated, redirecting to quiz: ${quizUrl}`);
+    
+    // Redirect to frontend quiz page
+    res.redirect(quizUrl);
+
+  } catch (error: any) {
+    console.error('❌ Error in App Proxy:', error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Error</title></head>
+      <body>
+        <h1>Error</h1>
+        <p>An error occurred while loading the quiz. Please try again later.</p>
+      </body>
+      </html>
+    `);
   }
 });
 
