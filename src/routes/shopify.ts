@@ -287,7 +287,10 @@ router.get('/shopify/proxy/:quizId', async (req: Request, res: Response) => {
     }
 
     // Validate Shopify signature
-    const isValidSignature = shopifyService.validateProxySignature(req.query as Record<string, string | string[] | undefined>, shop);
+    // IMPORTANT: Use raw query string to preserve URL encoding
+    // Extract query string from URL (everything after '?')
+    const rawQueryString = req.url.split('?')[1] || '';
+    const isValidSignature = shopifyService.validateProxySignatureFromRawQuery(rawQueryString, shop);
     
     if (!isValidSignature) {
       console.error('❌ App Proxy signature validation failed for shop:', shop);

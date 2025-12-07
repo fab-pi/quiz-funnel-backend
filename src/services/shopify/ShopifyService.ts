@@ -255,13 +255,97 @@ export class ShopifyService extends BaseService {
    * @param shopDomain - Shop domain from the request
    * @returns true if signature is valid, false otherwise
    */
+  /**
+   * Validate Shopify App Proxy request signature
+   * IMPORTANT: Must use raw query string (URL-encoded) as Shopify calculates signature on raw values
+   * @param rawQueryString - The raw query string from the request URL (e.g., "shop=...&path_prefix=%2Fapps%2Fquiz&...")
+   * @param shopDomain - Shop domain for logging
+   * @returns true if signature is valid, false otherwise
+   */
+  validateProxySignatureFromRawQuery(rawQueryString: string, shopDomain: string): boolean {
+    if (!rawQueryString) {
+      console.error('❌ App Proxy request missing query string');
+      return false;
+    }
+
+    // Parse the raw query string manually to preserve URL encoding
+    const params = new URLSearchParams(rawQueryString);
+    const signature = params.get('signature');
+    
+    if (!signature) {
+      console.error('❌ App Proxy request missing signature parameter');
+      return false;
+    }
+
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    if (!apiSecret) {
+      console.error('❌ SHOPIFY_API_SECRET is not configured');
+      return false;
+    }
+
+    // Remove signature parameter and build sorted query string
+    params.delete('signature');
+    
+    // Get all parameters, sort by key, and build query string
+    // IMPORTANT: We need to preserve empty values (e.g., logged_in_customer_id=)
+    const sortedKeys = Array.from(params.keys()).sort();
+    const sortedParams: string[] = [];
+    
+    for (const key of sortedKeys) {
+      const values = params.getAll(key);
+      // Handle array parameters (e.g., sections[])
+      if (values.length > 1) {
+        // For arrays, Shopify expects them sorted and joined
+        values.sort();
+        values.forEach(value => {
+          // Preserve empty values - if value is empty string, still include it
+          sortedParams.push(`${key}=${value}`);
+        });
+      } else {
+        // Preserve empty values - if value is empty string, still include it
+        const value = values[0] || '';
+        sortedParams.push(`${key}=${value}`);
+      }
+    }
+    
+    // Build query string (already sorted by key)
+    const queryString = sortedParams.join('&');
+    
+    // Calculate HMAC SHA256
+    const calculatedSignature = crypto
+      .createHmac('sha256', apiSecret)
+      .update(queryString)
+      .digest('hex');
+    
+    // Compare signatures (use timing-safe comparison)
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(calculatedSignature),
+      Buffer.from(signature)
+    );
+    
+    if (!isValid) {
+      console.error('❌ App Proxy signature validation failed');
+      console.error(`   Shop: ${shopDomain}`);
+      console.error(`   Raw query string: ${rawQueryString}`);
+      console.error(`   Reconstructed query string: ${queryString}`);
+      console.error(`   Expected: ${calculatedSignature}`);
+      console.error(`   Received: ${signature}`);
+    }
+    
+    return isValid;
+  }
+
+  /**
+   * @deprecated Use validateProxySignatureFromRawQuery instead
+   * This method doesn't preserve URL encoding which causes signature validation to fail
+   */
   validateProxySignature(queryParams: Record<string, string | string[] | undefined>, shopDomain: string): boolean {
-    // Shopify App Proxy uses 'signature' parameter
+    // For backward compatibility, try to reconstruct from decoded params
+    // But this may fail due to URL encoding issues
     const signature = queryParams.signature as string | undefined;
     
     if (!signature) {
       console.error('❌ App Proxy request missing signature parameter');
-      console.error('   Available params:', Object.keys(queryParams));
       return false;
     }
 
@@ -278,7 +362,8 @@ export class ShopifyService extends BaseService {
         const value = queryParams[key];
         if (value !== undefined) {
           const paramValue = Array.isArray(value) ? value[0] : value;
-          sortedParams.push(`${key}=${paramValue}`);
+          // URL encode the value to match Shopify's encoding
+          sortedParams.push(`${key}=${encodeURIComponent(paramValue)}`);
         }
       }
     }
