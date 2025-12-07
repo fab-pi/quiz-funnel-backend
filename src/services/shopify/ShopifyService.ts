@@ -307,10 +307,11 @@ export class ShopifyService extends BaseService {
       return false;
     }
 
-    // According to Shopify docs: 
+    // According to Shopify docs (https://shopify.dev/apps/build/online-store/display-dynamic-data):
     // 1. Sort parameters alphabetically by key
-    // 2. Concatenate them with & delimiter between key=value pairs
-    // 3. Format: key1=value1&key2=value2&key3=value3
+    // 2. Concatenate them WITHOUT any delimiters (no & between parameters)
+    // 3. Format: key1=value1key2=value2key3=value3 (no separators)
+    // Example: logged_in_customer_id=path_prefix=%2Fapps%2Fquizshop=quiz-test-1002.myshopify.comtimestamp=1765124963
     
     // Sort the parameter pairs by key alphabetically
     paramPairs.sort((a, b) => {
@@ -319,9 +320,14 @@ export class ShopifyService extends BaseService {
       return 0;
     });
     
-    // Build string by concatenating key=value pairs with & delimiter
-    // Example: logged_in_customer_id=&path_prefix=%2Fapps%2Fquiz&shop=quiz-test-1002.myshopify.com&timestamp=1765124963
-    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('&');
+    // Build string by concatenating key=value pairs WITHOUT delimiters
+    // IMPORTANT: Decode URL-encoded values before concatenation (Shopify example shows decoded values)
+    // This matches Shopify's exact format: parameters are joined directly with no & between them
+    const queryString = paramPairs.map(pair => {
+      // Decode URL-encoded value (e.g., %2Fapps%2Fquiz becomes /apps/quiz)
+      const decodedValue = decodeURIComponent(pair.value);
+      return `${pair.key}=${decodedValue}`;
+    }).join('');
     
     // Calculate HMAC SHA256
     const calculatedSignature = crypto
