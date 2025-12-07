@@ -309,8 +309,8 @@ export class ShopifyService extends BaseService {
 
     // According to Shopify docs: 
     // 1. Sort parameters alphabetically by key
-    // 2. Concatenate them WITHOUT delimiters (no & between parameters)
-    // 3. Format: key=value (with = between key and value, but no & between pairs)
+    // 2. Concatenate them with & delimiter between key=value pairs
+    // 3. Format: key1=value1&key2=value2&key3=value3
     
     // Sort the parameter pairs by key alphabetically
     paramPairs.sort((a, b) => {
@@ -319,9 +319,9 @@ export class ShopifyService extends BaseService {
       return 0;
     });
     
-    // Build string by concatenating key=value pairs WITHOUT delimiters between them
-    // Example: logged_in_customer_id=path_prefix=%2Fapps%2Fquizshop=quiz-test-1002.myshopify.comtimestamp=1765124963
-    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('');
+    // Build string by concatenating key=value pairs with & delimiter
+    // Example: logged_in_customer_id=&path_prefix=%2Fapps%2Fquiz&shop=quiz-test-1002.myshopify.com&timestamp=1765124963
+    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('&');
     
     // Calculate HMAC SHA256
     const calculatedSignature = crypto
