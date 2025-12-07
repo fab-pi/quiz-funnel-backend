@@ -47,7 +47,7 @@ const handleAnalyticsError = (error: any, res: Response) => {
 };
 
 // GET /analytics/drop-rate/:quizId?includeArchived=true&startDate=2024-01-01&endDate=2024-01-31
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/drop-rate/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -63,21 +63,40 @@ router.get('/analytics/drop-rate/:quizId', authenticate, async (req: AuthRequest
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getDropRateAnalytics(
       quizId, 
       includeArchived,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
-      endDate
+      endDate,
+      shopId
     );
     res.status(200).json({
       success: true,
@@ -90,7 +109,7 @@ router.get('/analytics/drop-rate/:quizId', authenticate, async (req: AuthRequest
 });
 
 // GET /analytics/utm-performance/:quizId?startDate=2024-01-01&endDate=2024-01-31
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/utm-performance/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -105,20 +124,39 @@ router.get('/analytics/utm-performance/:quizId', authenticate, async (req: AuthR
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getUTMPerformanceAnalytics(
       quizId,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
-      endDate
+      endDate,
+      shopId
     );
     res.status(200).json({
       success: true,
@@ -131,7 +169,7 @@ router.get('/analytics/utm-performance/:quizId', authenticate, async (req: AuthR
 });
 
 // GET /analytics/quiz-stats/:quizId?startDate=2024-01-01&endDate=2024-01-31
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/quiz-stats/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -146,20 +184,39 @@ router.get('/analytics/quiz-stats/:quizId', authenticate, async (req: AuthReques
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getQuizStats(
       quizId,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
-      endDate
+      endDate,
+      shopId
     );
     res.status(200).json({
       success: true,
@@ -172,7 +229,7 @@ router.get('/analytics/quiz-stats/:quizId', authenticate, async (req: AuthReques
 });
 
 // GET /analytics/question-details/:quizId?startDate=2024-01-01&endDate=2024-01-31
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/question-details/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -187,20 +244,39 @@ router.get('/analytics/question-details/:quizId', authenticate, async (req: Auth
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getQuestionDetails(
       quizId,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
-      endDate
+      endDate,
+      shopId
     );
     res.status(200).json({
       success: true,
@@ -213,7 +289,7 @@ router.get('/analytics/question-details/:quizId', authenticate, async (req: Auth
 });
 
 // GET /analytics/answer-distribution/:quizId/:questionId?startDate=2024-01-01&endDate=2024-01-31
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/answer-distribution/:quizId/:questionId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId, questionId } = req.params;
@@ -235,21 +311,40 @@ router.get('/analytics/answer-distribution/:quizId/:questionId', authenticate, a
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getAnswerDistribution(
       quizId,
       questionId,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
-      endDate
+      endDate,
+      shopId
     );
     res.status(200).json({
       success: true,
@@ -262,7 +357,7 @@ router.get('/analytics/answer-distribution/:quizId/:questionId', authenticate, a
 });
 
 // GET /analytics/daily-activity/:quizId?startDate=2024-01-01&endDate=2024-01-31&days=30
-// Protected: Requires authentication (user can view own quiz analytics, admin can view any)
+// Protected: Requires authentication (user can view own quiz analytics, admin can view any, Shopify shops see own quizzes)
 router.get('/analytics/daily-activity/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -278,21 +373,40 @@ router.get('/analytics/daily-activity/:quizId', authenticate, async (req: AuthRe
       });
     }
 
-    // Get user info from authenticated request
-    if (!req.user) {
-      return res.status(401).json({
-      success: false,
-        message: 'Authentication required'
-      });
+    // Determine userId, shopId, and userRole based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' | null = null;
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop authentication required'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role;
     }
 
     const result = await analyticsService.getDailyActivity(
       quizId,
-      req.user.userId,
-      req.user.role,
+      userId,
+      userRole,
       startDate,
       endDate,
-      days
+      days,
+      shopId
     );
     res.status(200).json({
       success: true,

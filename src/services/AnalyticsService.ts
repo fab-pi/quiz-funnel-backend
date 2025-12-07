@@ -10,18 +10,20 @@ export class AnalyticsService extends BaseService {
    * Validate quiz access and ownership
    * @param client - Database client
    * @param quizId - Quiz ID
-   * @param userId - ID of the user requesting
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (for native users)
+   * @param userRole - Role of the user ('user' or 'admin') - only for native users
+   * @param shopId - ID of the shop requesting (for Shopify users)
    * @throws Error if quiz not found or unauthorized
    */
   private async validateQuizAccess(
     client: any,
     quizId: string, 
-    userId: number,
-    userRole: 'user' | 'admin'
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
+    shopId: number | null = null
   ): Promise<void> {
       const quizCheck = await client.query(
-        'SELECT user_id FROM quizzes WHERE quiz_id = $1',
+        'SELECT user_id, shop_id FROM quizzes WHERE quiz_id = $1',
         [parseInt(quizId)]
       );
 
@@ -31,7 +33,15 @@ export class AnalyticsService extends BaseService {
 
       const quiz = quizCheck.rows[0];
 
-      // Check ownership (admin can access any quiz, users can only access their own)
+      // Shopify user: check shop ownership
+      if (shopId !== null) {
+        if (quiz.shop_id !== shopId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+        return; // Shopify users don't have roles, just shop ownership
+      }
+
+      // Native user: check user ownership (admin can access any quiz, users can only access their own)
       if (userRole !== 'admin' && quiz.user_id !== userId) {
         throw new Error('Unauthorized: You do not own this quiz');
       }
@@ -73,23 +83,25 @@ export class AnalyticsService extends BaseService {
    * Get drop rate analytics
    * @param quizId - Quiz ID
    * @param includeArchived - Whether to include archived questions
-   * @param userId - ID of the user requesting (for ownership check)
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (for ownership check, native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date for filtering
    * @param endDate - Optional end date for filtering
+   * @param shopId - ID of the shop requesting (for ownership check, Shopify users)
    */
   async getDropRateAnalytics(
     quizId: string, 
     includeArchived: boolean = false,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    shopId: number | null = null
   ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       // Filter by is_archived unless explicitly including archived questions
       const archiveFilter = includeArchived 
@@ -153,22 +165,24 @@ export class AnalyticsService extends BaseService {
   /**
    * Get UTM performance analytics
    * @param quizId - Quiz ID
-   * @param userId - ID of the user requesting (for ownership check)
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (for ownership check, native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date for filtering
    * @param endDate - Optional end date for filtering
+   * @param shopId - ID of the shop requesting (for ownership check, Shopify users)
    */
   async getUTMPerformanceAnalytics(
     quizId: string,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    shopId: number | null = null
   ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       const dateFilter = this.buildDateFilter(startDate, endDate, 1);
 
@@ -201,22 +215,24 @@ export class AnalyticsService extends BaseService {
   /**
    * Get generic quiz statistics
    * @param quizId - Quiz ID
-   * @param userId - ID of the user requesting
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date for filtering
    * @param endDate - Optional end date for filtering
+   * @param shopId - ID of the shop requesting (Shopify users)
    */
   async getQuizStats(
     quizId: string,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    shopId: number | null = null
   ): Promise<any> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       const dateFilter = this.buildDateFilter(startDate, endDate, 1);
 
@@ -261,22 +277,24 @@ export class AnalyticsService extends BaseService {
   /**
    * Get detailed analytics for each question
    * @param quizId - Quiz ID
-   * @param userId - ID of the user requesting
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date for filtering
    * @param endDate - Optional end date for filtering
+   * @param shopId - ID of the shop requesting (Shopify users)
    */
   async getQuestionDetails(
     quizId: string,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    shopId: number | null = null
   ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       const dateFilter = this.buildDateFilter(startDate, endDate, 1);
       const dateFilterSql = dateFilter.sql ? dateFilter.sql.replace('start_timestamp', 'us.start_timestamp') : '';
@@ -519,23 +537,25 @@ export class AnalyticsService extends BaseService {
    * Get answer distribution for a specific question
    * @param quizId - Quiz ID
    * @param questionId - Question ID
-   * @param userId - ID of the user requesting
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date for filtering
    * @param endDate - Optional end date for filtering
+   * @param shopId - ID of the shop requesting (Shopify users)
    */
   async getAnswerDistribution(
     quizId: string,
     questionId: string,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    shopId: number | null = null
   ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       // Verify question belongs to quiz
       const questionCheck = await client.query(
@@ -627,24 +647,26 @@ export class AnalyticsService extends BaseService {
   /**
    * Get daily activity (sessions and completions per day)
    * @param quizId - Quiz ID
-   * @param userId - ID of the user requesting
-   * @param userRole - Role of the user ('user' or 'admin')
+   * @param userId - ID of the user requesting (native users)
+   * @param userRole - Role of the user ('user' or 'admin', native users only)
    * @param startDate - Optional start date (defaults to 30 days ago)
    * @param endDate - Optional end date (defaults to today)
    * @param days - Number of days to show if no dates provided (default: 30)
+   * @param shopId - ID of the shop requesting (Shopify users)
    */
   async getDailyActivity(
     quizId: string,
-    userId: number,
-    userRole: 'user' | 'admin',
+    userId: number | null,
+    userRole: 'user' | 'admin' | null,
     startDate?: Date,
     endDate?: Date,
-    days: number = 30
+    days: number = 30,
+    shopId: number | null = null
   ): Promise<any[]> {
     const client = await this.pool.connect();
     
     try {
-      await this.validateQuizAccess(client, quizId, userId, userRole);
+      await this.validateQuizAccess(client, quizId, userId, userRole, shopId);
 
       // If no dates provided, default to last N days
       let finalStartDate = startDate;
