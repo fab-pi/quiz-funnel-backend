@@ -79,11 +79,11 @@ router.get('/analytics/drop-rate/:quizId', authenticate, async (req: AuthRequest
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -140,11 +140,11 @@ router.get('/analytics/utm-performance/:quizId', authenticate, async (req: AuthR
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -200,11 +200,11 @@ router.get('/analytics/quiz-stats/:quizId', authenticate, async (req: AuthReques
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -260,11 +260,11 @@ router.get('/analytics/question-details/:quizId', authenticate, async (req: Auth
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -327,11 +327,11 @@ router.get('/analytics/answer-distribution/:quizId/:questionId', authenticate, a
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;
@@ -389,11 +389,11 @@ router.get('/analytics/daily-activity/:quizId', authenticate, async (req: AuthRe
       shopId = req.shopId;
     } else {
       // Native user
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
+    if (!req.user) {
+      return res.status(401).json({
+      success: false,
+        message: 'Authentication required'
+      });
       }
       userId = req.user.userId;
       userRole = req.user.role;

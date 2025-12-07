@@ -14,6 +14,17 @@ console.log('  - GET  /shopify/auth/callback');
 console.log('  - POST /shopify/webhooks/app/uninstalled');
 console.log('  - GET  /shopify/proxy (App Proxy)');
 
+// Test route to verify proxy endpoint is accessible
+router.get('/shopify/proxy/test', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'App Proxy test endpoint is working',
+    query: req.query,
+    path: req.path,
+    url: req.url
+  });
+});
+
 /**
  * GET /api/shopify/auth
  * Initiates Shopify OAuth flow
@@ -217,6 +228,16 @@ router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Respo
  */
 router.get('/shopify/proxy', async (req: Request, res: Response) => {
   try {
+    console.log('🔄 App Proxy request received');
+    console.log('   Method:', req.method);
+    console.log('   URL:', req.url);
+    console.log('   Path:', req.path);
+    console.log('   Query:', JSON.stringify(req.query));
+    console.log('   Headers:', JSON.stringify({
+      'x-shopify-shop-domain': req.get('X-Shopify-Shop-Domain'),
+      'user-agent': req.get('User-Agent'),
+    }));
+    
     // Extract shop domain from query parameters or headers
     const shop = (req.query.shop as string) || req.get('X-Shopify-Shop-Domain');
     
