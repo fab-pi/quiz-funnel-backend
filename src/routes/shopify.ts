@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
 import { QuizContentService } from '../services/QuizContentService';
+import { captureRawQueryString, RawQueryRequest } from '../middleware/rawQueryString';
 import pool from '../config/db';
 
 const router = Router();
@@ -26,12 +27,14 @@ router.get('/shopify/proxy/test', (req: Request, res: Response) => {
 });
 
 // Catch-all route for debugging - log ALL requests to /shopify/proxy/*
-router.all('/shopify/proxy*', (req: Request, res: Response, next: NextFunction) => {
+// Uses captureRawQueryString middleware to capture raw query string for debugging
+router.all('/shopify/proxy*', captureRawQueryString, (req: RawQueryRequest, res: Response, next: NextFunction) => {
   console.log('🔍 [DEBUG] Request received at /shopify/proxy*');
   console.log('   Method:', req.method);
   console.log('   URL:', req.url);
   console.log('   Path:', req.path);
-  console.log('   Query:', JSON.stringify(req.query));
+  console.log('   Raw Query String:', req.rawQueryString);
+  console.log('   Parsed Query:', JSON.stringify(req.query));
   console.log('   Headers:', JSON.stringify({
     'x-shopify-shop-domain': req.get('X-Shopify-Shop-Domain'),
     'user-agent': req.get('User-Agent'),
@@ -241,14 +244,19 @@ router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Respo
  * Validates signature, verifies shop, and serves quiz content
  * 
  * Shopify sends requests as: /shopify/proxy/{quizId}?shop=...&signature=...
+ * 
+ * IMPORTANT: Uses captureRawQueryString middleware to get the raw query string
+ * before Express processes it, which is required for signature validation.
  */
-router.get('/shopify/proxy/:quizId', async (req: Request, res: Response) => {
+router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQueryRequest, res: Response) => {
   try {
     console.log('🔄 App Proxy request received');
     console.log('   Method:', req.method);
     console.log('   URL:', req.url);
+    console.log('   Original URL:', req.originalUrl);
     console.log('   Path:', req.path);
-    console.log('   Query:', JSON.stringify(req.query));
+    console.log('   Raw Query String:', req.rawQueryString);
+    console.log('   Parsed Query:', JSON.stringify(req.query));
     console.log('   Headers:', JSON.stringify({
       'x-shopify-shop-domain': req.get('X-Shopify-Shop-Domain'),
       'user-agent': req.get('User-Agent'),
@@ -287,9 +295,24 @@ router.get('/shopify/proxy/:quizId', async (req: Request, res: Response) => {
     }
 
     // Validate Shopify signature
-    // IMPORTANT: Use raw query string to preserve URL encoding
-    // Extract query string from URL (everything after '?')
-    const rawQueryString = req.url.split('?')[1] || '';
+    // IMPORTANT: Use raw query string captured by middleware before Express processed it
+    // This preserves the exact URL encoding that Shopify used to calculate the signature
+    const rawQueryString = req.rawQueryString || '';
+    
+    if (!rawQueryString) {
+      console.error('❌ App Proxy request missing raw query string');
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body>
+          <h1>Error</h1>
+          <p>Missing query string. Please ensure you're accessing this quiz from your Shopify store.</p>
+        </body>
+        </html>
+      `);
+    }
+    
     const isValidSignature = shopifyService.validateProxySignatureFromRawQuery(rawQueryString, shop);
     
     if (!isValidSignature) {
