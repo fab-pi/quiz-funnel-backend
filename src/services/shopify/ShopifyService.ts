@@ -268,47 +268,67 @@ export class ShopifyService extends BaseService {
       return false;
     }
 
-    // Parse the raw query string manually to preserve URL encoding
-    const params = new URLSearchParams(rawQueryString);
-    const signature = params.get('signature');
-    
-    if (!signature) {
-      console.error('❌ App Proxy request missing signature parameter');
-      return false;
-    }
-
     const apiSecret = process.env.SHOPIFY_API_SECRET;
     if (!apiSecret) {
       console.error('❌ SHOPIFY_API_SECRET is not configured');
       return false;
     }
 
-    // Remove signature parameter and build sorted query string
-    params.delete('signature');
+    // Parse the raw query string manually to preserve URL encoding
+    // Split by '&' to get individual parameters
+    const params = rawQueryString.split('&');
     
-    // Get all parameters, sort by key, and build query string
-    // IMPORTANT: We need to preserve empty values (e.g., logged_in_customer_id=)
-    const sortedKeys = Array.from(params.keys()).sort();
+    // Extract signature and other parameters
+    let signature: string | null = null;
+    const paramMap = new Map<string, string[]>();
+    
+    for (const param of params) {
+      // Split on first '=' to handle values that might contain '='
+      const equalIndex = param.indexOf('=');
+      if (equalIndex === -1) {
+        // Parameter without value (shouldn't happen, but handle it)
+        continue;
+      }
+      
+      const key = param.substring(0, equalIndex);
+      const value = param.substring(equalIndex + 1);
+      
+      if (key === 'signature') {
+        signature = value;
+      } else {
+        // Store parameter (preserve URL encoding in value)
+        if (!paramMap.has(key)) {
+          paramMap.set(key, []);
+        }
+        paramMap.get(key)!.push(value);
+      }
+    }
+    
+    if (!signature) {
+      console.error('❌ App Proxy request missing signature parameter');
+      return false;
+    }
+
+    // Build sorted query string (preserving URL encoding)
+    const sortedKeys = Array.from(paramMap.keys()).sort();
     const sortedParams: string[] = [];
     
     for (const key of sortedKeys) {
-      const values = params.getAll(key);
+      const values = paramMap.get(key)!;
       // Handle array parameters (e.g., sections[])
       if (values.length > 1) {
-        // For arrays, Shopify expects them sorted and joined
+        // For arrays, Shopify expects them sorted
         values.sort();
         values.forEach(value => {
-          // Preserve empty values - if value is empty string, still include it
           sortedParams.push(`${key}=${value}`);
         });
       } else {
         // Preserve empty values - if value is empty string, still include it
-        const value = values[0] || '';
-        sortedParams.push(`${key}=${value}`);
+        sortedParams.push(`${key}=${values[0]}`);
       }
     }
     
-    // Build query string (already sorted by key)
+    // Build query string (already sorted by key, with preserved URL encoding)
     const queryString = sortedParams.join('&');
     
     // Calculate HMAC SHA256
