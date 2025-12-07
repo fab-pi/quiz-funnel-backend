@@ -307,18 +307,21 @@ export class ShopifyService extends BaseService {
       return false;
     }
 
-    // According to Shopify docs, parameters should be sorted alphabetically by key
-    // Sort the parameter pairs by key
+    // According to Shopify docs: 
+    // 1. Sort parameters alphabetically by key
+    // 2. Concatenate them WITHOUT delimiters (no & between parameters)
+    // 3. Format: key=value (with = between key and value, but no & between pairs)
+    
+    // Sort the parameter pairs by key alphabetically
     paramPairs.sort((a, b) => {
-      // Sort by key alphabetically
       if (a.key < b.key) return -1;
       if (a.key > b.key) return 1;
-      // If keys are equal (shouldn't happen for App Proxy, but handle it)
       return 0;
     });
     
-    // Build query string from sorted parameters (preserving URL encoding)
-    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('&');
+    // Build string by concatenating key=value pairs WITHOUT delimiters between them
+    // Example: logged_in_customer_id=path_prefix=%2Fapps%2Fquizshop=quiz-test-1002.myshopify.comtimestamp=1765124963
+    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('');
     
     // Calculate HMAC SHA256
     const calculatedSignature = crypto
