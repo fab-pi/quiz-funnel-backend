@@ -12,7 +12,7 @@ console.log('🔧 Defining Shopify routes:');
 console.log('  - GET  /shopify/auth');
 console.log('  - GET  /shopify/auth/callback');
 console.log('  - POST /shopify/webhooks/app/uninstalled');
-console.log('  - GET  /shopify/proxy (App Proxy)');
+console.log('  - GET  /shopify/proxy/:quizId (App Proxy)');
 
 // Test route to verify proxy endpoint is accessible
 router.get('/shopify/proxy/test', (req: Request, res: Response) => {
@@ -235,12 +235,14 @@ router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Respo
 });
 
 /**
- * GET /api/shopify/proxy
+ * GET /api/shopify/proxy/:quizId
  * Shopify App Proxy endpoint
  * Handles requests from store.myshopify.com/apps/quiz/{quizId}
  * Validates signature, verifies shop, and serves quiz content
+ * 
+ * Shopify sends requests as: /shopify/proxy/{quizId}?shop=...&signature=...
  */
-router.get('/shopify/proxy', async (req: Request, res: Response) => {
+router.get('/shopify/proxy/:quizId', async (req: Request, res: Response) => {
   try {
     console.log('🔄 App Proxy request received');
     console.log('   Method:', req.method);
@@ -332,18 +334,13 @@ router.get('/shopify/proxy', async (req: Request, res: Response) => {
       `);
     }
 
-    // Extract quiz ID from path
-    // Shopify sends the path after the subpath prefix in the 'path' query parameter
-    // Example: if subpath is 'quiz', URL is 'store.myshopify.com/apps/quiz/123'
-    // Shopify will send path='/123' or path='123' in query parameters
-    const path = (req.query.path as string || '').trim();
+    // Extract quiz ID from path parameter
+    // Shopify sends requests as: /shopify/proxy/{quizId}
+    // The quizId is in req.params.quizId
+    const quizIdParam = req.params.quizId;
     
-    // Remove leading slash if present and extract quiz ID
-    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-    const quizIdMatch = cleanPath.match(/^(\d+)/); // Extract first number from path
-    
-    if (!quizIdMatch) {
-      console.error('❌ App Proxy request missing or invalid quiz ID in path:', path);
+    if (!quizIdParam || !/^\d+$/.test(quizIdParam)) {
+      console.error('❌ App Proxy request missing or invalid quiz ID:', quizIdParam);
       return res.status(400).send(`
         <!DOCTYPE html>
         <html>
@@ -357,7 +354,7 @@ router.get('/shopify/proxy', async (req: Request, res: Response) => {
       `);
     }
 
-    const quizId = quizIdMatch[1];
+    const quizId = parseInt(quizIdParam, 10);
     console.log(`🔄 App Proxy request for shop: ${shop}, quiz: ${quizId}`);
 
     // Verify quiz belongs to this shop
@@ -365,7 +362,7 @@ router.get('/shopify/proxy', async (req: Request, res: Response) => {
     try {
       const quizCheck = await client.query(
         'SELECT quiz_id, shop_id, is_active FROM quizzes WHERE quiz_id = $1',
-        [parseInt(quizId)]
+        [quizId]
       );
 
       if (quizCheck.rows.length === 0) {
