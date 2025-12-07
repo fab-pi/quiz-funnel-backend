@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
 import { QuizContentService } from '../services/QuizContentService';
 import pool from '../config/db';
@@ -23,6 +23,20 @@ router.get('/shopify/proxy/test', (req: Request, res: Response) => {
     path: req.path,
     url: req.url
   });
+});
+
+// Catch-all route for debugging - log ALL requests to /shopify/proxy/*
+router.all('/shopify/proxy*', (req: Request, res: Response, next: NextFunction) => {
+  console.log('🔍 [DEBUG] Request received at /shopify/proxy*');
+  console.log('   Method:', req.method);
+  console.log('   URL:', req.url);
+  console.log('   Path:', req.path);
+  console.log('   Query:', JSON.stringify(req.query));
+  console.log('   Headers:', JSON.stringify({
+    'x-shopify-shop-domain': req.get('X-Shopify-Shop-Domain'),
+    'user-agent': req.get('User-Agent'),
+  }));
+  next(); // Continue to next route handler
 });
 
 /**

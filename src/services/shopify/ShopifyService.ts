@@ -256,10 +256,12 @@ export class ShopifyService extends BaseService {
    * @returns true if signature is valid, false otherwise
    */
   validateProxySignature(queryParams: Record<string, string | string[] | undefined>, shopDomain: string): boolean {
-    const signature = queryParams.signature as string | undefined;
+    // Shopify App Proxy uses 'hmac' parameter, not 'signature'
+    const hmac = queryParams.hmac as string | undefined;
     
-    if (!signature) {
-      console.error('❌ App Proxy request missing signature');
+    if (!hmac) {
+      console.error('❌ App Proxy request missing hmac parameter');
+      console.error('   Available params:', Object.keys(queryParams));
       return false;
     }
 
@@ -269,10 +271,10 @@ export class ShopifyService extends BaseService {
       return false;
     }
 
-    // Build query string without signature parameter
+    // Build query string without hmac and signature parameters
     const sortedParams: string[] = [];
     for (const key in queryParams) {
-      if (key !== 'signature') {
+      if (key !== 'hmac' && key !== 'signature') {
         const value = queryParams[key];
         if (value !== undefined) {
           const paramValue = Array.isArray(value) ? value[0] : value;
@@ -288,22 +290,23 @@ export class ShopifyService extends BaseService {
     const queryString = sortedParams.join('&');
     
     // Calculate HMAC
-    const calculatedSignature = crypto
+    const calculatedHmac = crypto
       .createHmac('sha256', apiSecret)
       .update(queryString)
       .digest('hex');
     
-    // Compare signatures (use timing-safe comparison)
+    // Compare HMACs (use timing-safe comparison)
     const isValid = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(calculatedSignature)
+      Buffer.from(calculatedHmac),
+      Buffer.from(hmac)
     );
     
     if (!isValid) {
-      console.error('❌ App Proxy signature validation failed');
+      console.error('❌ App Proxy HMAC validation failed');
       console.error(`   Shop: ${shopDomain}`);
-      console.error(`   Expected: ${calculatedSignature}`);
-      console.error(`   Received: ${signature}`);
+      console.error(`   Query string: ${queryString}`);
+      console.error(`   Expected: ${calculatedHmac}`);
+      console.error(`   Received: ${hmac}`);
     }
     
     return isValid;
