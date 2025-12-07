@@ -441,14 +441,48 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     // Get frontend URL from environment
     const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
     
-    // Redirect to frontend quiz page with shop context
-    // The frontend will handle rendering the quiz without store header/footer
+    // Build the quiz URL that will be loaded in the iframe
     const quizUrl = `${frontendUrl}/quiz/${quizId}?shop=${encodeURIComponent(shop)}&proxy=true`;
     
-    console.log(`✅ App Proxy validated, redirecting to quiz: ${quizUrl}`);
+    console.log(`✅ App Proxy validated, serving quiz iframe: ${quizUrl}`);
     
-    // Redirect to frontend quiz page
-    res.redirect(quizUrl);
+    // Serve HTML with iframe to keep URL on Shopify domain
+    // This allows the quiz to appear as a native Shopify page
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Quiz</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            html, body {
+              height: 100%;
+              overflow: hidden;
+            }
+            iframe {
+              width: 100%;
+              height: 100vh;
+              border: none;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          <iframe 
+            src="${quizUrl}" 
+            title="Quiz"
+            allow="fullscreen"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation-by-user-activation"
+          ></iframe>
+        </body>
+      </html>
+    `);
 
   } catch (error: any) {
     console.error('❌ Error in App Proxy:', error);
