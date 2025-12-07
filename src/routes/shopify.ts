@@ -450,26 +450,54 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     // This allows the quiz to appear as a native Shopify page
     res.send(`
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="en" style="margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Quiz</title>
           <style>
             * {
-              margin: 0;
-              padding: 0;
+              margin: 0 !important;
+              padding: 0 !important;
               box-sizing: border-box;
             }
             html, body {
-              height: 100%;
-              overflow: hidden;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              min-width: 100vw !important;
+              min-height: 100vh !important;
+              max-width: 100vw !important;
+              max-height: 100vh !important;
+              overflow: hidden !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+            }
+            /* Override any Shopify wrapper styles */
+            body > *:not(iframe) {
+              display: none !important;
             }
             iframe {
-              width: 100%;
-              height: 100vh;
-              border: none;
-              display: block;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              min-width: 100vw !important;
+              min-height: 100vh !important;
+              max-width: 100vw !important;
+              max-height: 100vh !important;
+              border: none !important;
+              display: block !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              z-index: 9999 !important;
             }
           </style>
         </head>
