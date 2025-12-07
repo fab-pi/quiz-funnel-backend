@@ -279,8 +279,9 @@ export class ShopifyService extends BaseService {
     const params = rawQueryString.split('&');
     
     // Extract signature and other parameters
+    // IMPORTANT: Keep parameters in their original order to match Shopify's calculation
     let signature: string | null = null;
-    const paramMap = new Map<string, string[]>();
+    const paramPairs: Array<{ key: string; value: string }> = [];
     
     for (const param of params) {
       // Split on first '=' to handle values that might contain '='
@@ -296,11 +297,8 @@ export class ShopifyService extends BaseService {
       if (key === 'signature') {
         signature = value;
       } else {
-        // Store parameter (preserve URL encoding in value)
-        if (!paramMap.has(key)) {
-          paramMap.set(key, []);
-        }
-        paramMap.get(key)!.push(value);
+        // Store parameter in original order (preserve URL encoding in value)
+        paramPairs.push({ key, value });
       }
     }
     
@@ -309,27 +307,18 @@ export class ShopifyService extends BaseService {
       return false;
     }
 
-    // Build sorted query string (preserving URL encoding)
-    const sortedKeys = Array.from(paramMap.keys()).sort();
-    const sortedParams: string[] = [];
+    // According to Shopify docs, parameters should be sorted alphabetically by key
+    // Sort the parameter pairs by key
+    paramPairs.sort((a, b) => {
+      // Sort by key alphabetically
+      if (a.key < b.key) return -1;
+      if (a.key > b.key) return 1;
+      // If keys are equal (shouldn't happen for App Proxy, but handle it)
+      return 0;
+    });
     
-    for (const key of sortedKeys) {
-      const values = paramMap.get(key)!;
-      // Handle array parameters (e.g., sections[])
-      if (values.length > 1) {
-        // For arrays, Shopify expects them sorted
-        values.sort();
-        values.forEach(value => {
-          sortedParams.push(`${key}=${value}`);
-        });
-      } else {
-        // Preserve empty values - if value is empty string, still include it
-        sortedParams.push(`${key}=${values[0]}`);
-      }
-    }
-    
-    // Build query string (already sorted by key, with preserved URL encoding)
-    const queryString = sortedParams.join('&');
+    // Build query string from sorted parameters (preserving URL encoding)
+    const queryString = paramPairs.map(pair => `${pair.key}=${pair.value}`).join('&');
     
     // Calculate HMAC SHA256
     const calculatedSignature = crypto
