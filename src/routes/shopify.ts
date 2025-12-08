@@ -8,6 +8,166 @@ const router = Router();
 const shopifyService = new ShopifyService(pool);
 const quizContentService = new QuizContentService(pool);
 
+/**
+ * Generate HTML shell for App Proxy
+ * This HTML loads the React quiz app from the frontend and keeps the URL on the shop domain
+ * Uses a script tag to load the Next.js app bundle and render it client-side
+ */
+function generateQuizHTMLShell(quizId: number, shop: string): string {
+  const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
+  const apiUrl = process.env.API_URL || 'https://api.try-directquiz.com/api';
+  
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz</title>
+  <meta name="robots" content="noindex, nofollow">
+  
+  <!-- Prevent Shopify theme styles from interfering -->
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      width: 100%;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    
+    /* Hide Shopify store header and footer */
+    #shopify-section-header,
+    #shopify-section-footer,
+    .shopify-section-header,
+    .shopify-section-footer,
+    .header-wrapper,
+    .footer-wrapper,
+    .site-header,
+    .site-footer {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+    
+    /* Loading state */
+    #quiz-loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #f9fafb;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    /* Quiz container */
+    #quiz-container {
+      width: 100%;
+      min-height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="quiz-loader">
+    <div class="spinner"></div>
+  </div>
+  
+  <div id="quiz-container" style="display: none;"></div>
+  
+  <script>
+    // Configuration passed to the quiz app
+    window.__QUIZ_CONFIG__ = {
+      quizId: ${quizId},
+      shop: ${JSON.stringify(shop)},
+      frontendUrl: ${JSON.stringify(frontendUrl)},
+      apiUrl: ${JSON.stringify(apiUrl)},
+      proxy: true
+    };
+    
+    // Extract UTM parameters from current URL
+    function extractUTMParams() {
+      const params = new URLSearchParams(window.location.search);
+      const utmParams = {};
+      for (const [key, value] of params.entries()) {
+        if (key.toLowerCase().startsWith('utm_')) {
+          utmParams[key] = value;
+        }
+      }
+      return utmParams;
+    }
+    
+    // Add UTM parameters to window config
+    window.__QUIZ_CONFIG__.utmParams = extractUTMParams();
+    
+    // Load the quiz app using a seamless iframe
+    // This is the standard approach for Shopify App Proxy - keeps URL on shop domain
+    // while loading content from your app. The iframe is invisible to users.
+    function loadQuizApp() {
+      const config = window.__QUIZ_CONFIG__;
+      
+      // Build the quiz URL with all necessary parameters
+      const quizUrl = new URL(config.frontendUrl + '/quiz/' + config.quizId);
+      quizUrl.searchParams.set('shop', config.shop);
+      quizUrl.searchParams.set('proxy', 'true');
+      
+      // Add UTM parameters from the current URL
+      Object.keys(config.utmParams).forEach(key => {
+        quizUrl.searchParams.set(key, config.utmParams[key]);
+      });
+      
+      // Create a seamless, full-screen iframe to load the Next.js app
+      // This keeps the URL on the shop domain while the content loads from your frontend
+      const iframe = document.createElement('iframe');
+      iframe.src = quizUrl.toString();
+      iframe.style.cssText = 'width: 100%; height: 100vh; border: none; position: fixed; top: 0; left: 0; z-index: 9999; background: #fff;';
+      iframe.setAttribute('allow', 'fullscreen');
+      iframe.setAttribute('frameborder', '0');
+      iframe.setAttribute('scrolling', 'no');
+      
+      // Hide loader and show iframe when it loads
+      iframe.onload = function() {
+        document.getElementById('quiz-loader').style.display = 'none';
+        document.getElementById('quiz-container').style.display = 'block';
+      };
+      
+      // Handle errors
+      iframe.onerror = function() {
+        document.getElementById('quiz-loader').innerHTML = 
+          '<div style="text-align: center; padding: 2rem;"><p style="color: #ef4444;">Failed to load quiz. Please try again.</p></div>';
+      };
+      
+      // Add iframe to container
+      document.getElementById('quiz-container').appendChild(iframe);
+    }
+    
+    // Start loading when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', loadQuizApp);
+    } else {
+      loadQuizApp();
+    }
+  </script>
+</body>
+</html>`;
+}
+
 // Debug: Log route definitions
 console.log('🔧 Defining Shopify routes:');
 console.log('  - GET  /shopify/auth');
@@ -438,79 +598,14 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       client.release();
     }
 
-    // Get frontend URL from environment
-    const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
+    // Generate and serve HTML shell directly
+    // This keeps the URL on the shop domain (store.myshopify.com/apps/quiz/4)
+    // The HTML shell loads the React quiz app from the frontend
+    console.log(`✅ App Proxy validated, serving HTML shell for quiz: ${quizId}`);
     
-    // Build the quiz URL that will be loaded in the iframe
-    const quizUrl = `${frontendUrl}/quiz/${quizId}?shop=${encodeURIComponent(shop)}&proxy=true`;
-    
-    console.log(`✅ App Proxy validated, serving quiz iframe: ${quizUrl}`);
-    
-    // Serve HTML with iframe to keep URL on Shopify domain
-    // This allows the quiz to appear as a native Shopify page
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en" style="margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Quiz</title>
-          <style>
-            * {
-              margin: 0 !important;
-              padding: 0 !important;
-              box-sizing: border-box;
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              width: 100vw !important;
-              height: 100vh !important;
-              min-width: 100vw !important;
-              min-height: 100vh !important;
-              max-width: 100vw !important;
-              max-height: 100vh !important;
-              overflow: hidden !important;
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              bottom: 0 !important;
-            }
-            /* Override any Shopify wrapper styles */
-            body > *:not(iframe) {
-              display: none !important;
-            }
-            iframe {
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              bottom: 0 !important;
-              width: 100vw !important;
-              height: 100vh !important;
-              min-width: 100vw !important;
-              min-height: 100vh !important;
-              max-width: 100vw !important;
-              max-height: 100vh !important;
-              border: none !important;
-              display: block !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              z-index: 9999 !important;
-            }
-          </style>
-        </head>
-        <body>
-          <iframe 
-            src="${quizUrl}" 
-            title="Quiz"
-            allow="fullscreen"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation-by-user-activation"
-          ></iframe>
-        </body>
-      </html>
-    `);
+    // Set content type and serve HTML
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(generateQuizHTMLShell(quizId, shop));
 
   } catch (error: any) {
     console.error('❌ Error in App Proxy:', error);
