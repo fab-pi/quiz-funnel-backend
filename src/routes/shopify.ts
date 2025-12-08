@@ -9,6 +9,203 @@ const shopifyService = new ShopifyService(pool);
 const quizContentService = new QuizContentService(pool);
 
 /**
+ * Rewrite relative asset URLs to absolute URLs pointing to the frontend domain
+ * This fixes 404 errors when Next.js assets are loaded from the shop domain
+ */
+function rewriteAssetUrls(html: string, frontendUrl: string): string {
+  // Remove trailing slash from frontendUrl
+  const baseUrl = frontendUrl.replace(/\/$/, '');
+  
+  // Patterns to match:
+  // - href="/_next/static/..." -> href="https://quiz.try-directquiz.com/_next/static/..."
+  // - src="/_next/static/..." -> src="https://quiz.try-directquiz.com/_next/static/..."
+  // - href="/favicon.ico" -> href="https://quiz.try-directquiz.com/favicon.ico"
+  // - Any relative URL starting with /
+  
+  // Rewrite href attributes with relative URLs
+  html = html.replace(/href="\/([^"]+)"/g, (match, path) => {
+    // Skip if already absolute URL
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+      return match;
+    }
+    return `href="${baseUrl}/${path}"`;
+  });
+  
+  // Rewrite src attributes with relative URLs
+  html = html.replace(/src="\/([^"]+)"/g, (match, path) => {
+    // Skip if already absolute URL
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+      return match;
+    }
+    return `src="${baseUrl}/${path}"`;
+  });
+  
+  // Rewrite srcset attributes (for responsive images)
+  html = html.replace(/srcset="([^"]+)"/g, (match, srcset) => {
+    return `srcset="${srcset.split(',').map((src: string) => {
+      const trimmed = src.trim();
+      if (trimmed.startsWith('/') && !trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('//')) {
+        return trimmed.replace(/^\//, `${baseUrl}/`);
+      }
+      return trimmed;
+    }).join(', ')}"`;
+  });
+  
+  // Rewrite action attributes (for forms)
+  html = html.replace(/action="\/([^"]+)"/g, (match, path) => {
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+      return match;
+    }
+    return `action="${baseUrl}/${path}"`;
+  });
+  
+  // Rewrite URLs in CSS (url() references)
+  html = html.replace(/url\(["']?\/([^"')]+)["']?\)/g, (match, path) => {
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+      return match;
+    }
+    return `url("${baseUrl}/${path}")`;
+  });
+  
+  return html;
+}
+
+/**
+ * Inject CSS to hide Shopify theme elements and ensure full-height rendering
+ */
+function injectShopifyThemeHidingCSS(html: string): string {
+  const hideThemeCSS = `
+    <style id="shopify-proxy-theme-hide">
+      /* Hide Shopify store header and footer - very aggressive selectors */
+      #shopify-section-header,
+      #shopify-section-footer,
+      .shopify-section-header,
+      .shopify-section-footer,
+      .header-wrapper,
+      .footer-wrapper,
+      .site-header,
+      .site-footer,
+      header:not(#quiz-container header):not(#__next header),
+      footer:not(#quiz-container footer):not(#__next footer),
+      .shopify-section:not(#quiz-container),
+      nav:not(#quiz-container nav):not(#__next nav),
+      .shopify-section-header,
+      .shopify-section-footer,
+      [class*="header"],
+      [class*="Header"],
+      [class*="footer"],
+      [class*="Footer"],
+      [id*="header"],
+      [id*="Header"],
+      [id*="footer"],
+      [id*="Footer"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        position: absolute !important;
+        left: -9999px !important;
+      }
+      
+      /* Ensure main content area takes full height - override all theme constraints */
+      html, body {
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+      }
+      
+      /* Override all possible container constraints */
+      main,
+      .main-content,
+      .page-content,
+      #MainContent,
+      .container,
+      .page-container,
+      .content-wrapper,
+      [class*="container"],
+      [class*="Container"],
+      [class*="wrapper"],
+      [class*="Wrapper"] {
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+      }
+      
+      /* Ensure quiz container is full height */
+      #__next,
+      #quiz-container,
+      [data-quiz-container],
+      body > div:first-child {
+        height: 100vh !important;
+        min-height: 100vh !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+      }
+    </style>
+    <script>
+      // Also hide elements via JavaScript as a fallback
+      (function() {
+        function hideShopifyElements() {
+          const selectors = [
+            '#shopify-section-header',
+            '#shopify-section-footer',
+            '.shopify-section-header',
+            '.shopify-section-footer',
+            '.header-wrapper',
+            '.footer-wrapper',
+            '.site-header',
+            '.site-footer'
+          ];
+          selectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+              if (el && !el.closest('#quiz-container') && !el.closest('#__next')) {
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+                el.style.height = '0';
+                el.style.overflow = 'hidden';
+              }
+            });
+          });
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', hideShopifyElements);
+        } else {
+          hideShopifyElements();
+        }
+        // Also run after a delay to catch dynamically loaded elements
+        setTimeout(hideShopifyElements, 100);
+        setTimeout(hideShopifyElements, 500);
+      })();
+    </script>
+  `;
+  
+  // Inject CSS before closing </head> tag
+  if (html.includes('</head>')) {
+    html = html.replace('</head>', `${hideThemeCSS}</head>`);
+  } else {
+    // If no </head> tag, inject at the beginning
+    html = hideThemeCSS + html;
+  }
+  
+  return html;
+}
+
+/**
  * Generate HTML shell for App Proxy
  * This HTML loads the React quiz app directly (no iframe) and keeps the URL on the shop domain
  * Uses Content-Type: application/liquid to integrate directly into Shopify theme without container wrapper
@@ -727,7 +924,15 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
         throw new Error(`Frontend returned ${response.status}: ${response.statusText}`);
       }
       
-      const html = await response.text();
+      let html = await response.text();
+      
+      // Rewrite all relative URLs to absolute URLs pointing to the frontend domain
+      // This fixes 404 errors for Next.js static assets (CSS, JS chunks, etc.)
+      // Next.js generates relative URLs like /_next/static/... which need to be absolute
+      html = rewriteAssetUrls(html, frontendUrl);
+      
+      // Add CSS to hide Shopify theme elements and ensure full-height
+      html = injectShopifyThemeHidingCSS(html);
       
       // Set Content-Type to application/liquid to integrate directly into Shopify theme
       // This prevents Shopify from wrapping our content in a container, allowing full-height rendering
