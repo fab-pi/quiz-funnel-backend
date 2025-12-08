@@ -10,8 +10,8 @@ const quizContentService = new QuizContentService(pool);
 
 /**
  * Generate HTML shell for App Proxy
- * This HTML loads the React quiz app from the frontend and keeps the URL on the shop domain
- * Uses a script tag to load the Next.js app bundle and render it client-side
+ * This HTML loads the React quiz app directly (no iframe) and keeps the URL on the shop domain
+ * Uses Content-Type: application/liquid to integrate directly into Shopify theme without container wrapper
  */
 function generateQuizHTMLShell(quizId: number, shop: string): string {
   const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
@@ -27,6 +27,7 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
   
   <!-- Prevent Shopify theme styles from interfering -->
   <style>
+    /* Reset and base styles */
     * {
       margin: 0;
       padding: 0;
@@ -35,8 +36,11 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
     
     html, body {
       width: 100%;
+      height: 100%;
       min-height: 100vh;
       overflow-x: hidden;
+      margin: 0;
+      padding: 0;
     }
     
     /* Hide Shopify store header and footer */
@@ -47,11 +51,26 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
     .header-wrapper,
     .footer-wrapper,
     .site-header,
-    .site-footer {
+    .site-footer,
+    header,
+    footer {
       display: none !important;
       visibility: hidden !important;
       height: 0 !important;
       overflow: hidden !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Ensure main content area takes full height */
+    main,
+    .main-content,
+    .page-content,
+    #MainContent {
+      height: 100vh !important;
+      min-height: 100vh !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
     
     /* Loading state */
@@ -59,8 +78,14 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
       display: flex;
       align-items: center;
       justify-content: center;
+      width: 100%;
+      height: 100vh;
       min-height: 100vh;
       background: #f9fafb;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 9999;
     }
     
     .spinner {
@@ -77,10 +102,26 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
       100% { transform: rotate(360deg); }
     }
     
-    /* Quiz container */
+    /* Quiz container - full height */
     #quiz-container {
       width: 100%;
+      height: 100vh;
       min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      position: relative;
+    }
+    
+    /* Override any Shopify theme container constraints */
+    .container,
+    .page-container,
+    .content-wrapper {
+      max-width: 100% !important;
+      width: 100% !important;
+      height: 100vh !important;
+      min-height: 100vh !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
   </style>
 </head>
@@ -89,7 +130,7 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
     <div class="spinner"></div>
   </div>
   
-  <div id="quiz-container" style="display: none;"></div>
+  <div id="quiz-container"></div>
   
   <script>
     // Configuration passed to the quiz app
@@ -116,9 +157,8 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
     // Add UTM parameters to window config
     window.__QUIZ_CONFIG__.utmParams = extractUTMParams();
     
-    // Load the quiz app using a seamless iframe
-    // This is the standard approach for Shopify App Proxy - keeps URL on shop domain
-    // while loading content from your app. The iframe is invisible to users.
+    // Load the quiz app directly (no iframe)
+    // Fetch the quiz page HTML and inject it into the container
     function loadQuizApp() {
       const config = window.__QUIZ_CONFIG__;
       
@@ -132,29 +172,88 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
         quizUrl.searchParams.set(key, config.utmParams[key]);
       });
       
-      // Create a seamless, full-screen iframe to load the Next.js app
-      // This keeps the URL on the shop domain while the content loads from your frontend
-      const iframe = document.createElement('iframe');
-      iframe.src = quizUrl.toString();
-      iframe.style.cssText = 'width: 100%; height: 100vh; border: none; position: fixed; top: 0; left: 0; z-index: 9999; background: #fff;';
-      iframe.setAttribute('allow', 'fullscreen');
-      iframe.setAttribute('frameborder', '0');
-      iframe.setAttribute('scrolling', 'no');
-      
-      // Hide loader and show iframe when it loads
-      iframe.onload = function() {
+      // Fetch the quiz page HTML
+      fetch(quizUrl.toString(), {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'include',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to load quiz: ' + response.status);
+        }
+        return response.text();
+      })
+      .then(html => {
+        // Parse the HTML
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        // Get the body content (this contains the React app)
+        const bodyContent = doc.body;
+        
+        // Clear container and inject content
+        const container = document.getElementById('quiz-container');
+        container.innerHTML = '';
+        
+        // Move all child nodes from parsed body to container
+        while (bodyContent.firstChild) {
+          container.appendChild(bodyContent.firstChild);
+        }
+        
+        // Execute scripts from the parsed document
+        const scripts = doc.querySelectorAll('script');
+        scripts.forEach(oldScript => {
+          const newScript = document.createElement('script');
+          
+          if (oldScript.src) {
+            // External script - copy src
+            newScript.src = oldScript.src;
+            newScript.async = oldScript.async;
+            newScript.defer = oldScript.defer;
+          } else {
+            // Inline script - copy content
+            newScript.textContent = oldScript.textContent;
+          }
+          
+          // Copy other attributes
+          Array.from(oldScript.attributes).forEach(attr => {
+            if (attr.name !== 'src') {
+              newScript.setAttribute(attr.name, attr.value);
+            }
+          });
+          
+          document.head.appendChild(newScript);
+        });
+        
+        // Copy stylesheets
+        const stylesheets = doc.querySelectorAll('link[rel="stylesheet"]');
+        stylesheets.forEach(link => {
+          if (!document.querySelector('link[href="' + link.href + '"]')) {
+            document.head.appendChild(link.cloneNode(true));
+          }
+        });
+        
+        // Hide loader
         document.getElementById('quiz-loader').style.display = 'none';
-        document.getElementById('quiz-container').style.display = 'block';
-      };
-      
-      // Handle errors
-      iframe.onerror = function() {
+        
+        // Ensure container is visible and full height
+        container.style.display = 'block';
+        container.style.height = '100vh';
+        container.style.minHeight = '100vh';
+      })
+      .catch(error => {
+        console.error('Error loading quiz:', error);
         document.getElementById('quiz-loader').innerHTML = 
-          '<div style="text-align: center; padding: 2rem;"><p style="color: #ef4444;">Failed to load quiz. Please try again.</p></div>';
-      };
-      
-      // Add iframe to container
-      document.getElementById('quiz-container').appendChild(iframe);
+          '<div style="text-align: center; padding: 2rem; color: #ef4444;">' +
+          '<p style="font-size: 1.2rem; margin-bottom: 1rem;">Failed to load quiz</p>' +
+          '<p>' + error.message + '</p>' +
+          '<p style="margin-top: 1rem; font-size: 0.9rem;">Please try refreshing the page.</p>' +
+          '</div>';
+      });
     }
     
     // Start loading when DOM is ready
@@ -163,6 +262,15 @@ function generateQuizHTMLShell(quizId: number, shop: string): string {
     } else {
       loadQuizApp();
     }
+    
+    // Force full height on window resize
+    window.addEventListener('resize', function() {
+      const container = document.getElementById('quiz-container');
+      if (container) {
+        container.style.height = window.innerHeight + 'px';
+        container.style.minHeight = window.innerHeight + 'px';
+      }
+    });
   </script>
 </body>
 </html>`;
@@ -603,8 +711,9 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     // The HTML shell loads the React quiz app from the frontend
     console.log(`✅ App Proxy validated, serving HTML shell for quiz: ${quizId}`);
     
-    // Set content type and serve HTML
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // Set Content-Type to application/liquid to integrate directly into Shopify theme
+    // This prevents Shopify from wrapping our content in a container, allowing full-height rendering
+    res.setHeader('Content-Type', 'application/liquid; charset=utf-8');
     res.send(generateQuizHTMLShell(quizId, shop));
 
   } catch (error: any) {
