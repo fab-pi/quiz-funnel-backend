@@ -926,6 +926,17 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       
       let html = await response.text();
       
+      console.log(`📄 Fetched HTML from frontend (length: ${html.length} bytes)`);
+      
+      // Check if HTML contains React app markers
+      const hasReactRoot = html.includes('__next') || html.includes('react');
+      const hasScripts = html.includes('<script') && html.includes('_next/static');
+      
+      if (!hasReactRoot || !hasScripts) {
+        console.warn('⚠️ HTML might not contain React app properly');
+        console.log(`   Has React root: ${hasReactRoot}, Has scripts: ${hasScripts}`);
+      }
+      
       // Rewrite all relative URLs to absolute URLs pointing to the frontend domain
       // This fixes 404 errors for Next.js static assets (CSS, JS chunks, etc.)
       // Next.js generates relative URLs like /_next/static/... which need to be absolute
@@ -934,9 +945,16 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       // Add CSS to hide Shopify theme elements and ensure full-height
       html = injectShopifyThemeHidingCSS(html);
       
-      // Set Content-Type to application/liquid to integrate directly into Shopify theme
-      // This prevents Shopify from wrapping our content in a container, allowing full-height rendering
-      res.setHeader('Content-Type', 'application/liquid; charset=utf-8');
+      // IMPORTANT: Use text/html instead of application/liquid
+      // application/liquid causes Shopify to process the HTML as Liquid template,
+      // which can break React hydration and script execution
+      // text/html serves it as-is, and our CSS will hide the theme elements
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      
+      // Add headers to ensure proper rendering
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // Allow embedding in same origin (shop domain)
+      
       res.send(html);
       
       console.log(`✅ Quiz HTML served successfully for quiz: ${quizId}`);
