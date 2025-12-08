@@ -706,15 +706,57 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       client.release();
     }
 
-    // Generate and serve HTML shell directly
-    // This keeps the URL on the shop domain (store.myshopify.com/apps/quiz/4)
-    // The HTML shell loads the React quiz app from the frontend
-    console.log(`✅ App Proxy validated, serving HTML shell for quiz: ${quizId}`);
+    // Fetch the quiz HTML from frontend server-side (avoids CORS issues)
+    // Then serve it with Content-Type: application/liquid to integrate directly into Shopify theme
+    console.log(`✅ App Proxy validated, fetching quiz HTML for quiz: ${quizId}`);
     
-    // Set Content-Type to application/liquid to integrate directly into Shopify theme
-    // This prevents Shopify from wrapping our content in a container, allowing full-height rendering
-    res.setHeader('Content-Type', 'application/liquid; charset=utf-8');
-    res.send(generateQuizHTMLShell(quizId, shop));
+    const frontendUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
+    const quizUrl = `${frontendUrl}/quiz/${quizId}?shop=${encodeURIComponent(shop)}&proxy=true`;
+    
+    try {
+      // Fetch HTML from frontend server-side
+      const response = await fetch(quizUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Shopify-App-Proxy/1.0'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Frontend returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const html = await response.text();
+      
+      // Set Content-Type to application/liquid to integrate directly into Shopify theme
+      // This prevents Shopify from wrapping our content in a container, allowing full-height rendering
+      res.setHeader('Content-Type', 'application/liquid; charset=utf-8');
+      res.send(html);
+      
+      console.log(`✅ Quiz HTML served successfully for quiz: ${quizId}`);
+    } catch (fetchError: any) {
+      console.error('❌ Error fetching quiz HTML from frontend:', fetchError);
+      // Fallback: serve error page
+      res.setHeader('Content-Type', 'application/liquid; charset=utf-8');
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Error</title>
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 2rem; }
+            h1 { color: #ef4444; }
+          </style>
+        </head>
+        <body>
+          <h1>Error Loading Quiz</h1>
+          <p>Unable to load the quiz. Please try again later.</p>
+          <p style="color: #666; font-size: 0.9rem;">${fetchError.message || 'Unknown error'}</p>
+        </body>
+        </html>
+      `);
+    }
 
   } catch (error: any) {
     console.error('❌ Error in App Proxy:', error);
