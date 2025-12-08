@@ -931,19 +931,82 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       // Check if HTML contains React app markers
       const hasReactRoot = html.includes('__next') || html.includes('react');
       const hasScripts = html.includes('<script') && html.includes('_next/static');
+      const scriptCount = (html.match(/<script/g) || []).length;
+      const hasNextData = html.includes('__NEXT_DATA__');
+      
+      console.log(`   HTML Analysis:`);
+      console.log(`   - Has React root: ${hasReactRoot}`);
+      console.log(`   - Has scripts: ${hasScripts} (${scriptCount} script tags found)`);
+      console.log(`   - Has Next.js data: ${hasNextData}`);
+      console.log(`   - Contains "Loading Quiz": ${html.includes('Loading Quiz')}`);
       
       if (!hasReactRoot || !hasScripts) {
         console.warn('⚠️ HTML might not contain React app properly');
-        console.log(`   Has React root: ${hasReactRoot}, Has scripts: ${hasScripts}`);
+      }
+      
+      // If HTML is too small or missing key elements, log a sample
+      if (html.length < 10000 || !hasScripts) {
+        console.log(`   HTML sample (first 500 chars): ${html.substring(0, 500)}`);
+        console.log(`   HTML sample (last 500 chars): ${html.substring(html.length - 500)}`);
       }
       
       // Rewrite all relative URLs to absolute URLs pointing to the frontend domain
       // This fixes 404 errors for Next.js static assets (CSS, JS chunks, etc.)
       // Next.js generates relative URLs like /_next/static/... which need to be absolute
+      const htmlBeforeRewrite = html;
       html = rewriteAssetUrls(html, frontendUrl);
+      
+      // Log URL rewriting results
+      const scriptMatchesBefore = (htmlBeforeRewrite.match(/src="\/_next\/static/g) || []).length;
+      const scriptMatchesAfter = (html.match(/src="https:\/\/quiz\.try-directquiz\.com\/_next\/static/g) || []).length;
+      console.log(`   URL Rewriting: ${scriptMatchesBefore} relative script URLs found, ${scriptMatchesAfter} rewritten to absolute`);
       
       // Add CSS to hide Shopify theme elements and ensure full-height
       html = injectShopifyThemeHidingCSS(html);
+      
+      // Add a script to ensure React initializes and log any errors
+      const debugScript = `
+        <script>
+          console.log('🔍 App Proxy: HTML loaded, checking React initialization...');
+          window.addEventListener('load', function() {
+            console.log('✅ App Proxy: Window loaded');
+            setTimeout(function() {
+              const nextRoot = document.getElementById('__next');
+              const reactRoot = document.querySelector('[data-reactroot]') || document.querySelector('#__next > div');
+              console.log('🔍 App Proxy: React root check:', {
+                hasNextRoot: !!nextRoot,
+                hasReactRoot: !!reactRoot,
+                nextRootChildren: nextRoot ? nextRoot.children.length : 0
+              });
+              
+              // Check if QuizApp is stuck on loading
+              const loadingElements = document.querySelectorAll('*');
+              let foundLoading = false;
+              loadingElements.forEach(el => {
+                if (el.textContent && el.textContent.includes('Loading Quiz')) {
+                  foundLoading = true;
+                  console.warn('⚠️ App Proxy: Still showing "Loading Quiz" after 2 seconds');
+                }
+              });
+              
+              if (foundLoading) {
+                console.error('❌ App Proxy: Quiz stuck on loading screen');
+                console.log('   This usually means React hydration failed or API calls are failing');
+                console.log('   Check Network tab for failed requests');
+              }
+            }, 2000);
+          });
+        </script>
+      `;
+      
+      // Inject debug script before closing </body> tag
+      if (html.includes('</body>')) {
+        html = html.replace('</body>', `${debugScript}</body>`);
+      } else if (html.includes('</html>')) {
+        html = html.replace('</html>', `${debugScript}</html>`);
+      } else {
+        html = html + debugScript;
+      }
       
       // IMPORTANT: Use text/html instead of application/liquid
       // application/liquid causes Shopify to process the HTML as Liquid template,
