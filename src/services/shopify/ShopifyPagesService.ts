@@ -37,8 +37,8 @@ export class ShopifyPagesService extends BaseService {
       const handle = pageData.handle || this.generateHandleFromTitle(pageData.title);
 
       const mutation = `
-        mutation pageCreate($input: PageCreateInput!) {
-          pageCreate(input: $input) {
+        mutation pageCreate($page: PageCreateInput!) {
+          pageCreate(page: $page) {
             page {
               id
               handle
@@ -53,7 +53,7 @@ export class ShopifyPagesService extends BaseService {
       `;
 
       const variables = {
-        input: {
+        page: {
           title: pageData.title,
           bodyHtml: pageData.bodyHtml,
           handle: handle,
@@ -137,8 +137,8 @@ export class ShopifyPagesService extends BaseService {
       const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
 
       const mutation = `
-        mutation pageUpdate($id: ID!, $input: PageUpdateInput!) {
-          pageUpdate(id: $id, input: $input) {
+        mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
+          pageUpdate(id: $id, page: $page) {
             page {
               id
               handle
@@ -154,18 +154,18 @@ export class ShopifyPagesService extends BaseService {
 
       const variables: any = {
         id: pageGid,
-        input: {},
+        page: {},
       };
 
       // Only include fields that are provided
       if (pageData.title !== undefined) {
-        variables.input.title = pageData.title;
+        variables.page.title = pageData.title;
       }
       if (pageData.bodyHtml !== undefined) {
-        variables.input.bodyHtml = pageData.bodyHtml;
+        variables.page.bodyHtml = pageData.bodyHtml;
       }
       if (pageData.handle !== undefined) {
-        variables.input.handle = pageData.handle;
+        variables.page.handle = pageData.handle;
       }
 
       // GraphqlParams expects data as string or object with query/variables
