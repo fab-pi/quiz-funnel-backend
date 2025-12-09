@@ -2,10 +2,20 @@ import { Pool } from 'pg';
 import { BaseService } from './BaseService';
 import { QuizCreationRequest, QuizCreationResponse } from '../types';
 import { facebookPixelService } from './FacebookPixelService';
+import { ShopifyService } from './shopify/ShopifyService';
+import { ShopifyPagesService } from './shopify/ShopifyPagesService';
+import { ShopifyTemplateGenerator } from './shopify/ShopifyTemplateGenerator';
 
 export class QuizCreationService extends BaseService {
-  constructor(pool: Pool) {
+  private shopifyService: ShopifyService | null;
+  private shopifyPagesService: ShopifyPagesService | null;
+  private templateGenerator: ShopifyTemplateGenerator;
+
+  constructor(pool: Pool, shopifyService?: ShopifyService) {
     super(pool);
+    this.shopifyService = shopifyService || null;
+    this.shopifyPagesService = shopifyService ? new ShopifyPagesService(pool, shopifyService) : null;
+    this.templateGenerator = new ShopifyTemplateGenerator();
   }
 
   /**
@@ -158,6 +168,66 @@ export class QuizCreationService extends BaseService {
           image_url: question.image_url,
           options: createdOptions
         });
+      }
+
+      // If this is a Shopify quiz, create Shopify page
+      let shopifyPageId: number | null = null;
+      let shopifyPageHandle: string | null = null;
+
+      if (shopId && this.shopifyService && this.shopifyPagesService) {
+        try {
+          console.log(`🔄 Creating Shopify page for quiz ${quizId}...`);
+          
+          // Get shop information
+          const shopResult = await client.query(
+            'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+            [shopId]
+          );
+
+          if (shopResult.rows.length === 0) {
+            console.warn(`⚠️ Shop ${shopId} not found or uninstalled, skipping Shopify page creation`);
+          } else {
+            const shopDomain = shopResult.rows[0].shop_domain;
+            const accessToken = shopResult.rows[0].access_token;
+
+            // Generate page title and handle
+            const pageTitle = data.quiz_name;
+            const pageHandle = `quiz-${quizId}`;
+
+            // Generate Liquid template HTML
+            const templateHtml = this.templateGenerator.generateQuizIframeTemplate(
+              quizId,
+              shopDomain,
+              process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
+            );
+
+            // Create Shopify page
+            const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
+              title: pageTitle,
+              bodyHtml: templateHtml,
+              handle: pageHandle,
+            });
+
+            shopifyPageId = pageResult.pageId;
+            shopifyPageHandle = pageResult.handle;
+
+            // Update quiz with Shopify page information
+            await client.query(
+              `UPDATE quizzes 
+               SET shopify_page_id = $1, shopify_page_handle = $2 
+               WHERE quiz_id = $3`,
+              [shopifyPageId, shopifyPageHandle, quizId]
+            );
+
+            console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${shopifyPageHandle}`);
+          }
+        } catch (shopifyError: any) {
+          // Log error but don't fail quiz creation
+          // Quiz can still work without Shopify page
+          console.error(`❌ Error creating Shopify page for quiz ${quizId}:`, shopifyError);
+          console.error(`   Quiz will be created without Shopify page. Error: ${shopifyError.message}`);
+          // Continue with quiz creation - don't throw error
+        }
       }
 
       // Commit transaction
@@ -751,6 +821,95 @@ export class QuizCreationService extends BaseService {
         throw new Error('Quiz must have at least one active question. Cannot archive all questions.');
       }
 
+      // If this is a Shopify quiz with an existing page, update Shopify page
+      if (shopId && this.shopifyService && this.shopifyPagesService) {
+        try {
+          // Check if quiz has a Shopify page
+          const pageCheckResult = await client.query(
+            'SELECT shopify_page_id, shopify_page_handle FROM quizzes WHERE quiz_id = $1',
+            [quizId]
+          );
+
+          const existingPageId = pageCheckResult.rows[0]?.shopify_page_id;
+          const existingPageHandle = pageCheckResult.rows[0]?.shopify_page_handle;
+
+          if (existingPageId) {
+            console.log(`🔄 Updating Shopify page ${existingPageId} for quiz ${quizId}...`);
+            
+            // Get shop information
+            const shopResult = await client.query(
+              'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+              [shopId]
+            );
+
+            if (shopResult.rows.length === 0) {
+              console.warn(`⚠️ Shop ${shopId} not found or uninstalled, skipping Shopify page update`);
+            } else {
+              const shopDomain = shopResult.rows[0].shop_domain;
+              const accessToken = shopResult.rows[0].access_token;
+
+              // Generate updated template HTML
+              const templateHtml = this.templateGenerator.generateQuizIframeTemplate(
+                quizId,
+                shopDomain,
+                process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
+              );
+
+              // Update Shopify page
+              await this.shopifyPagesService.updatePage(shopDomain, accessToken, existingPageId, {
+                title: data.quiz_name, // Update title if quiz name changed
+                bodyHtml: templateHtml, // Update template with latest quiz data
+                // Keep existing handle
+              });
+
+              console.log(`✅ Shopify page updated for quiz ${quizId}: ${shopDomain}/pages/${existingPageHandle}`);
+            }
+          } else {
+            // No existing page - create one (quiz might have been created before Shopify integration)
+            console.log(`🔄 Creating new Shopify page for quiz ${quizId}...`);
+            
+            const shopResult = await client.query(
+              'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+              [shopId]
+            );
+
+            if (shopResult.rows.length > 0) {
+              const shopDomain = shopResult.rows[0].shop_domain;
+              const accessToken = shopResult.rows[0].access_token;
+
+              const pageHandle = `quiz-${quizId}`;
+              const templateHtml = this.templateGenerator.generateQuizIframeTemplate(
+                quizId,
+                shopDomain,
+                process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
+              );
+
+              const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
+                title: data.quiz_name,
+                bodyHtml: templateHtml,
+                handle: pageHandle,
+              });
+
+              // Update quiz with Shopify page information
+              await client.query(
+                `UPDATE quizzes 
+                 SET shopify_page_id = $1, shopify_page_handle = $2 
+                 WHERE quiz_id = $3`,
+                [pageResult.pageId, pageResult.handle, quizId]
+              );
+
+              console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${pageResult.handle}`);
+            }
+          }
+        } catch (shopifyError: any) {
+          // Log error but don't fail quiz update
+          // Quiz update should succeed even if Shopify page update fails
+          console.error(`❌ Error updating Shopify page for quiz ${quizId}:`, shopifyError);
+          console.error(`   Quiz update will continue. Error: ${shopifyError.message}`);
+          // Continue with quiz update - don't throw error
+        }
+      }
+
       // Commit transaction
       await client.query('COMMIT');
       console.log(`✅ Quiz update transaction completed successfully for quiz ID: ${quizId}`);
@@ -780,6 +939,105 @@ export class QuizCreationService extends BaseService {
       // Rollback transaction on error
       await client.query('ROLLBACK');
       console.error(`❌ Error updating quiz ${quizId}, transaction rolled back:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Delete a quiz and its associated Shopify page (if exists)
+   * @param quizId - Quiz ID to delete
+   * @param userId - ID of the user deleting (for ownership check, null for Shopify)
+   * @param userRole - Role of the user ('user' or 'admin')
+   * @param shopId - ID of the Shopify shop (optional, for Shopify users)
+   */
+  async deleteQuiz(quizId: number, userId: number | null, userRole: 'user' | 'admin', shopId?: number | null): Promise<{ success: boolean; message: string }> {
+    const client = await this.pool.connect();
+    
+    try {
+      // Start transaction
+      await client.query('BEGIN');
+
+      console.log(`🔄 Starting quiz deletion transaction for quiz ID: ${quizId} by user ${userId || 'shopify'}...`);
+
+      // Verify quiz exists and check ownership
+      const quizCheckResult = await client.query(
+        'SELECT quiz_id, user_id, shop_id, shopify_page_id FROM quizzes WHERE quiz_id = $1',
+        [quizId]
+      );
+
+      if (quizCheckResult.rows.length === 0) {
+        throw new Error('Quiz not found');
+      }
+
+      const quiz = quizCheckResult.rows[0];
+
+      // Check ownership
+      // Admin can delete any quiz
+      if (userRole === 'admin') {
+        // Admin can delete any quiz
+      } else if (shopId !== undefined && shopId !== null) {
+        // Shopify user - check shop ownership
+        if (quiz.shop_id !== shopId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else if (userId !== null) {
+        // Native user - check user ownership
+        if (quiz.user_id !== userId) {
+          throw new Error('Unauthorized: You do not own this quiz');
+        }
+      } else {
+        throw new Error('Unauthorized: Authentication required');
+      }
+
+      // Delete Shopify page if exists
+      if (quiz.shopify_page_id && this.shopifyService && this.shopifyPagesService) {
+        try {
+          console.log(`🔄 Deleting Shopify page ${quiz.shopify_page_id} for quiz ${quizId}...`);
+          
+          // Get shop information
+          const shopResult = await client.query(
+            'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+            [quiz.shop_id]
+          );
+
+          if (shopResult.rows.length > 0) {
+            const shopDomain = shopResult.rows[0].shop_domain;
+            const accessToken = shopResult.rows[0].access_token;
+
+            // Delete Shopify page
+            await this.shopifyPagesService.deletePage(shopDomain, accessToken, quiz.shopify_page_id);
+            console.log(`✅ Shopify page ${quiz.shopify_page_id} deleted for quiz ${quizId}`);
+          } else {
+            console.warn(`⚠️ Shop ${quiz.shop_id} not found or uninstalled, skipping Shopify page deletion`);
+          }
+        } catch (shopifyError: any) {
+          // Log error but don't fail quiz deletion
+          // Quiz deletion should succeed even if Shopify page deletion fails
+          console.error(`❌ Error deleting Shopify page for quiz ${quizId}:`, shopifyError);
+          console.error(`   Quiz deletion will continue. Error: ${shopifyError.message}`);
+          // Continue with quiz deletion - don't throw error
+        }
+      }
+
+      // Delete quiz (CASCADE will delete questions, options, sessions, answers)
+      await client.query('DELETE FROM quizzes WHERE quiz_id = $1', [quizId]);
+      console.log(`✅ Quiz ${quizId} deleted`);
+
+      // Commit transaction
+      await client.query('COMMIT');
+      console.log(`✅ Quiz deletion transaction completed successfully for quiz ID: ${quizId}`);
+
+      return {
+        success: true,
+        message: 'Quiz deleted successfully'
+      };
+
+    } catch (error: any) {
+      // Rollback transaction on error
+      await client.query('ROLLBACK');
+      console.error(`❌ Error deleting quiz ${quizId}, transaction rolled back:`, error);
       throw error;
     } finally {
       client.release();

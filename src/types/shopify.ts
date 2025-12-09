@@ -37,3 +37,19 @@ export interface ShopifySession {
   isOnline: boolean;
 }
 
+/**
+ * Shopify Page information stored in quizzes table
+ */
+export interface ShopifyPageInfo {
+  shopifyPageId: number | null;
+  shopifyPageHandle: string | null;
+}
+
+/**
+ * Database row representation of Shopify page fields
+ */
+export interface ShopifyPageInfoDatabaseRow {
+  shopify_page_id: number | null;
+  shopify_page_handle: string | null;
+}
+

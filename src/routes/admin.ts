@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { QuizCreationService } from '../services/QuizCreationService';
 import { AdminService } from '../services/AdminService';
 import { CloudinaryService } from '../services/CloudinaryService';
+import { ShopifyService } from '../services/shopify/ShopifyService';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
@@ -10,7 +11,16 @@ import dns from 'dns';
 import { facebookPixelService } from '../services/FacebookPixelService';
 
 const router = Router();
-const quizCreationService = new QuizCreationService(pool);
+
+// Initialize ShopifyService (may fail if env vars not set, but that's OK for native users)
+let shopifyService: ShopifyService | null = null;
+try {
+  shopifyService = new ShopifyService(pool);
+} catch (error) {
+  console.warn('⚠️ ShopifyService not initialized (Shopify features disabled):', (error as Error).message);
+}
+
+const quizCreationService = new QuizCreationService(pool, shopifyService || undefined);
 const adminService = new AdminService(pool);
 const cloudinaryService = new CloudinaryService();
 
@@ -469,6 +479,79 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update quiz. Transaction rolled back.'
+    });
+  }
+});
+
+// DELETE /admin/quiz/:quizId - Delete a quiz
+// Protected: Requires authentication (user can delete own quizzes, admin can delete any)
+router.delete('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { quizId } = req.params;
+
+    // Validate quiz ID
+    if (!quizId || isNaN(parseInt(quizId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid quiz ID is required'
+      });
+    }
+
+    // Determine userId and shopId based on auth type
+    let userId: number | null = null;
+    let shopId: number | null = null;
+    let userRole: 'user' | 'admin' = 'user';
+
+    if (req.authType === 'shopify') {
+      // Shopify user
+      if (!req.shopId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Shop ID not found in request'
+        });
+      }
+      shopId = req.shopId;
+    } else {
+      // Native user
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+      userId = req.user.userId;
+      userRole = req.user.role as 'user' | 'admin';
+    }
+
+    const result = await quizCreationService.deleteQuiz(
+      parseInt(quizId, 10),
+      userId,
+      userRole,
+      shopId
+    );
+
+    res.status(200).json(result);
+
+  } catch (error: any) {
+    console.error('❌ Error deleting quiz:', error);
+    
+    if (error.message === 'Quiz not found') {
+      return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to delete quiz'
     });
   }
 });
