@@ -1018,10 +1018,23 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       // Add CSS to hide Shopify theme elements and ensure full-height
       html = injectShopifyThemeHidingCSS(html);
       
-      // Add a script to ensure React initializes and log any errors
+      // Inject API URL and debug script
+      // IMPORTANT: Set NEXT_PUBLIC_API_URL so QuizApp can make API calls
+      const backendApiUrl = process.env.BACKEND_API_URL || 'https://api.try-directquiz.com/api';
       const debugScript = `
         <script>
+          // Inject API URL into window for QuizApp to use
+          window.__QUIZ_API_URL__ = '${backendApiUrl}';
+          
+          // Override process.env.NEXT_PUBLIC_API_URL if it exists
+          if (typeof window !== 'undefined') {
+            // This will be available to QuizApp component
+            window.__NEXT_PUBLIC_API_URL__ = '${backendApiUrl}';
+          }
+          
           console.log('🔍 App Proxy: HTML loaded, checking React initialization...');
+          console.log('   API URL set to:', '${backendApiUrl}');
+          
           window.addEventListener('load', function() {
             console.log('✅ App Proxy: Window loaded');
             setTimeout(function() {
@@ -1047,6 +1060,7 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
                 console.error('❌ App Proxy: Quiz stuck on loading screen');
                 console.log('   This usually means React hydration failed or API calls are failing');
                 console.log('   Check Network tab for failed requests');
+                console.log('   Expected API URL:', '${backendApiUrl}');
               }
             }, 2000);
           });
