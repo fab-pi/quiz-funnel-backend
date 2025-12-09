@@ -912,11 +912,14 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     
     try {
       // Fetch HTML from frontend server-side
+      // IMPORTANT: Use a browser-like User-Agent to ensure Next.js serves full HTML with __NEXT_DATA__
       const response = await fetch(quizUrl, {
         method: 'GET',
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent': 'Shopify-App-Proxy/1.0'
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache'
         }
       });
       
@@ -933,21 +936,40 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
       const hasScripts = html.includes('<script') && html.includes('_next/static');
       const scriptCount = (html.match(/<script/g) || []).length;
       const hasNextData = html.includes('__NEXT_DATA__');
+      const hasNextDataScript = html.includes('<script id="__NEXT_DATA__"');
       
       console.log(`   HTML Analysis:`);
       console.log(`   - Has React root: ${hasReactRoot}`);
       console.log(`   - Has scripts: ${hasScripts} (${scriptCount} script tags found)`);
       console.log(`   - Has Next.js data: ${hasNextData}`);
+      console.log(`   - Has __NEXT_DATA__ script tag: ${hasNextDataScript}`);
       console.log(`   - Contains "Loading Quiz": ${html.includes('Loading Quiz')}`);
+      
+      if (!hasNextDataScript) {
+        console.error('❌ CRITICAL: __NEXT_DATA__ script tag is missing! React hydration will fail.');
+        console.log('   This usually means Next.js is serving incomplete HTML.');
+        console.log('   Possible causes:');
+        console.log('   1. Next.js is in development mode and serving minimal HTML');
+        console.log('   2. The page is being server-side rendered incorrectly');
+        console.log('   3. The HTML is being modified/stripped somewhere');
+      }
       
       if (!hasReactRoot || !hasScripts) {
         console.warn('⚠️ HTML might not contain React app properly');
       }
       
       // If HTML is too small or missing key elements, log a sample
-      if (html.length < 10000 || !hasScripts) {
-        console.log(`   HTML sample (first 500 chars): ${html.substring(0, 500)}`);
-        console.log(`   HTML sample (last 500 chars): ${html.substring(html.length - 500)}`);
+      if (html.length < 10000 || !hasScripts || !hasNextDataScript) {
+        console.log(`   HTML sample (first 1000 chars): ${html.substring(0, 1000)}`);
+        console.log(`   HTML sample (last 1000 chars): ${html.substring(html.length - 1000)}`);
+        
+        // Try to find __NEXT_DATA__ in the HTML
+        const nextDataMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
+        if (!nextDataMatch) {
+          console.error('   ❌ __NEXT_DATA__ script tag not found in HTML');
+        } else {
+          console.log(`   ✅ Found __NEXT_DATA__ script tag (length: ${nextDataMatch[0].length} chars)`);
+        }
       }
       
       // Rewrite all relative URLs to absolute URLs pointing to the frontend domain
