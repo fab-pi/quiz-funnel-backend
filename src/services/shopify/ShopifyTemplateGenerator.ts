@@ -66,7 +66,7 @@ export class ShopifyTemplateGenerator {
       padding: 0 !important;
     }
     
-    /* Break out of theme container constraints - target ALL common Shopify theme containers */
+    /* Break out of theme container constraints - AGGRESSIVE: Override overflow */
     .page-width,
     .page-width--narrow,
     .page-width--wide,
@@ -81,7 +81,9 @@ export class ShopifyTemplateGenerator {
     .section-content,
     .template-page__content,
     #MainContent,
-    main {
+    main,
+    .template-page,
+    .page {
       max-width: 100% !important;
       width: 100% !important;
       width: 100vw !important;
@@ -89,6 +91,12 @@ export class ShopifyTemplateGenerator {
       padding-right: 0 !important;
       margin-left: 0 !important;
       margin-right: 0 !important;
+      overflow: visible !important;
+      overflow-x: visible !important;
+      overflow-y: visible !important;
+      max-height: none !important;
+      height: auto !important;
+      min-height: 100vh !important;
     }
     
     /* Ensure main content area takes full viewport */
@@ -100,31 +108,34 @@ export class ShopifyTemplateGenerator {
       min-height: 100vh !important;
       margin: 0 !important;
       padding: 0 !important;
-      overflow: hidden !important;
+      overflow: visible !important;
     }
     
-    /* Quiz container - escape theme constraints using fixed positioning */
+    /* Quiz container - AGGRESSIVE: Fixed positioning to escape all theme containers */
     #quiz-container {
       position: fixed !important;
       top: 0 !important;
       left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
       width: 100vw !important;
       width: 100% !important;
       height: 100vh !important;
       min-height: 100vh !important;
       margin: 0 !important;
       padding: 0 !important;
-      z-index: 9999 !important;
+      z-index: 99999 !important;
       background: #fff !important;
+      overflow: hidden !important;
     }
     
-    /* Alternative: Use absolute positioning if fixed doesn't work */
-    body #quiz-container {
-      position: absolute !important;
-      top: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      bottom: 0 !important;
+    /* Ensure body and html allow full viewport */
+    html, body {
+      height: 100vh !important;
+      min-height: 100vh !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
     }
     
     /* Iframe styling - full viewport */
@@ -153,7 +164,16 @@ export class ShopifyTemplateGenerator {
   <script>
     (function() {
       /**
-       * Hide page title dynamically (runs immediately and on DOM ready)
+       * AGGRESSIVE APPROACH: Move quiz container to body level and use fixed positioning
+       * This escapes all theme container constraints
+       */
+      
+      let quizContainer = null;
+      let quizIframe = null;
+      let isMovedToBody = false;
+      
+      /**
+       * Hide page title dynamically
        */
       function hidePageTitle() {
         // Find all h1 elements that might be the page title
@@ -162,7 +182,6 @@ export class ShopifyTemplateGenerator {
           // Check if this h1 is likely the page title (not inside quiz container)
           const isInQuizContainer = h1.closest('#quiz-container');
           if (!isInQuizContainer) {
-            // Hide it
             h1.style.display = 'none';
             h1.style.visibility = 'hidden';
             h1.style.height = '0';
@@ -197,36 +216,63 @@ export class ShopifyTemplateGenerator {
       }
       
       /**
-       * Break out of theme container constraints dynamically
+       * Hide header and footer aggressively
        */
-      function breakOutOfContainers() {
-        const container = document.getElementById('quiz-container');
-        if (!container) return;
+      function hideHeaderFooter() {
+        const selectors = [
+          '#shopify-section-header',
+          '#shopify-section-footer',
+          '.shopify-section-header',
+          '.shopify-section-footer',
+          '.header-wrapper',
+          '.footer-wrapper',
+          '.site-header',
+          '.site-footer',
+          'header:not(#quiz-container header)',
+          'footer:not(#quiz-container footer)'
+        ];
         
-        // Find all parent containers and override their constraints
-        let parent = container.parentElement;
-        const maxDepth = 10; // Prevent infinite loops
+        selectors.forEach(function(selector) {
+          try {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(function(el) {
+              el.style.display = 'none';
+              el.style.visibility = 'hidden';
+              el.style.height = '0';
+              el.style.overflow = 'hidden';
+              el.style.margin = '0';
+              el.style.padding = '0';
+            });
+          } catch (e) {
+            // Ignore invalid selectors
+          }
+        });
+      }
+      
+      /**
+       * Override parent container overflow to allow expansion
+       */
+      function overrideParentOverflow() {
+        if (!quizContainer) return;
+        
+        let parent = quizContainer.parentElement;
+        const maxDepth = 15;
         let depth = 0;
         
-        while (parent && depth < maxDepth) {
-          // Override common container constraints
-          parent.style.maxWidth = '100%';
-          parent.style.width = '100%';
-          parent.style.paddingLeft = '0';
-          parent.style.paddingRight = '0';
-          parent.style.marginLeft = '0';
-          parent.style.marginRight = '0';
-          
-          // If we've reached body or html, stop
-          if (parent.tagName === 'BODY' || parent.tagName === 'HTML') {
-            break;
-          }
+        while (parent && depth < maxDepth && parent !== document.body && parent !== document.documentElement) {
+          // Override overflow constraints
+          parent.style.overflow = 'visible';
+          parent.style.overflowX = 'visible';
+          parent.style.overflowY = 'visible';
+          parent.style.maxHeight = 'none';
+          parent.style.height = 'auto';
+          parent.style.minHeight = '100vh';
           
           parent = parent.parentElement;
           depth++;
         }
         
-        // Also target common container classes directly
+        // Also target common container classes
         const containerSelectors = [
           '.page-width',
           '.container',
@@ -236,28 +282,131 @@ export class ShopifyTemplateGenerator {
           '.main-content',
           '.page-content',
           '#MainContent',
-          'main'
+          'main',
+          '.template-page',
+          '.page'
         ];
         
         containerSelectors.forEach(function(selector) {
-          const elements = document.querySelectorAll(selector);
-          elements.forEach(function(el) {
-            if (el.contains(container)) {
-              el.style.maxWidth = '100%';
-              el.style.width = '100%';
-              el.style.paddingLeft = '0';
-              el.style.paddingRight = '0';
-              el.style.marginLeft = '0';
-              el.style.marginRight = '0';
-            }
-          });
+          try {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(function(el) {
+              if (el.contains && el.contains(quizContainer)) {
+                el.style.overflow = 'visible';
+                el.style.overflowX = 'visible';
+                el.style.overflowY = 'visible';
+                el.style.maxHeight = 'none';
+                el.style.height = 'auto';
+                el.style.minHeight = '100vh';
+              }
+            });
+          } catch (e) {
+            // Ignore errors
+          }
         });
+      }
+      
+      /**
+       * Move quiz container to body level (AGGRESSIVE: Escapes all theme containers)
+       */
+      function moveContainerToBody() {
+        if (isMovedToBody) return;
+        
+        quizContainer = document.getElementById('quiz-container');
+        if (!quizContainer) {
+          // Retry if container not found yet
+          setTimeout(moveContainerToBody, 10);
+          return;
+        }
+        
+        // Check if already at body level
+        if (quizContainer.parentElement === document.body) {
+          isMovedToBody = true;
+          return;
+        }
+        
+        // Clone the container with all its content
+        const clonedContainer = quizContainer.cloneNode(true);
+        clonedContainer.id = 'quiz-container';
+        
+        // Remove old container
+        quizContainer.remove();
+        
+        // Append to body (outside all theme containers)
+        document.body.appendChild(clonedContainer);
+        quizContainer = clonedContainer;
+        quizIframe = document.getElementById("${iframeId}");
+        
+        isMovedToBody = true;
+        console.log('✅ Quiz container moved to body level');
+      }
+      
+      /**
+       * Apply fixed positioning and full viewport dimensions
+       */
+      function applyFixedPositioning() {
+        if (!quizContainer) return;
+        
+        // Calculate available viewport height (account for any visible header/footer)
+        const headerHeight = document.querySelector('header') ? 
+          (document.querySelector('header').offsetHeight || 0) : 0;
+        const footerHeight = document.querySelector('footer') ? 
+          (document.querySelector('footer').offsetHeight || 0) : 0;
+        const availableHeight = window.innerHeight - headerHeight - footerHeight;
+        
+        // Apply fixed positioning to escape all containers
+        quizContainer.style.position = 'fixed';
+        quizContainer.style.top = '0';
+        quizContainer.style.left = '0';
+        quizContainer.style.right = '0';
+        quizContainer.style.bottom = '0';
+        quizContainer.style.width = '100vw';
+        quizContainer.style.width = '100%';
+        quizContainer.style.height = availableHeight + 'px';
+        quizContainer.style.height = '100vh';
+        quizContainer.style.minHeight = '100vh';
+        quizContainer.style.margin = '0';
+        quizContainer.style.padding = '0';
+        quizContainer.style.zIndex = '99999';
+        quizContainer.style.backgroundColor = '#fff';
+        quizContainer.style.overflow = 'hidden';
+        
+        // Apply to iframe
+        if (quizIframe) {
+          quizIframe.style.width = '100%';
+          quizIframe.style.width = '100vw';
+          quizIframe.style.height = availableHeight + 'px';
+          quizIframe.style.height = '100vh';
+          quizIframe.style.minHeight = '100vh';
+          quizIframe.style.border = 'none';
+          quizIframe.style.display = 'block';
+          quizIframe.style.margin = '0';
+          quizIframe.style.padding = '0';
+        }
+        
+        // Also ensure body and html allow full height
+        document.body.style.height = '100vh';
+        document.body.style.minHeight = '100vh';
+        document.body.style.margin = '0';
+        document.body.style.padding = '0';
+        document.body.style.overflow = 'hidden';
+        
+        document.documentElement.style.height = '100vh';
+        document.documentElement.style.minHeight = '100vh';
+        document.documentElement.style.margin = '0';
+        document.documentElement.style.padding = '0';
       }
       
       /**
        * Setup iframe with UTM parameter passing
        */
       function setupIframe() {
+        quizIframe = document.getElementById("${iframeId}");
+        if (!quizIframe) {
+          setTimeout(setupIframe, 10);
+          return;
+        }
+        
         // Extract all URL parameters from parent page (including UTMs)
         const urlParams = new URLSearchParams(window.location.search);
         const utmString = urlParams.toString();
@@ -266,45 +415,48 @@ export class ShopifyTemplateGenerator {
         const baseUrl = "${quizBaseUrl}";
         const quizUrl = utmString ? baseUrl + "?" + utmString : baseUrl;
         
-        // Get iframe element
-        const iframe = document.getElementById("${iframeId}");
-        
-        if (iframe) {
-          // Set iframe source with UTM parameters
-          iframe.src = quizUrl;
-          console.log('✅ Quiz iframe loaded:', quizUrl);
-        } else {
-          // Retry if iframe not found yet
-          setTimeout(setupIframe, 10);
-        }
+        // Set iframe source with UTM parameters
+        quizIframe.src = quizUrl;
+        console.log('✅ Quiz iframe loaded:', quizUrl);
       }
       
       /**
-       * Initialize everything
+       * Initialize everything (AGGRESSIVE APPROACH)
        */
       function initialize() {
-        // Hide page title immediately
+        // Step 1: Hide page title and header/footer
         hidePageTitle();
+        hideHeaderFooter();
         
-        // Break out of containers
-        breakOutOfContainers();
+        // Step 2: Move container to body level (escapes all theme containers)
+        moveContainerToBody();
         
-        // Setup iframe
+        // Step 3: Override parent overflow constraints
+        overrideParentOverflow();
+        
+        // Step 4: Apply fixed positioning and full viewport
+        applyFixedPositioning();
+        
+        // Step 5: Setup iframe
         setupIframe();
+      }
+      
+      /**
+       * Update dimensions on resize
+       */
+      function updateDimensions() {
+        if (!quizContainer || !quizIframe) return;
         
-        // Ensure quiz container is full viewport
-        const container = document.getElementById('quiz-container');
-        const iframe = document.getElementById("${iframeId}");
-        if (container) {
-          container.style.width = window.innerWidth + 'px';
-          container.style.height = window.innerHeight + 'px';
-          container.style.minHeight = window.innerHeight + 'px';
-        }
-        if (iframe) {
-          iframe.style.width = window.innerWidth + 'px';
-          iframe.style.height = window.innerHeight + 'px';
-          iframe.style.minHeight = window.innerHeight + 'px';
-        }
+        const headerHeight = document.querySelector('header') ? 
+          (document.querySelector('header').offsetHeight || 0) : 0;
+        const footerHeight = document.querySelector('footer') ? 
+          (document.querySelector('footer').offsetHeight || 0) : 0;
+        const availableHeight = window.innerHeight - headerHeight - footerHeight;
+        
+        quizContainer.style.height = availableHeight + 'px';
+        quizContainer.style.height = '100vh';
+        quizIframe.style.height = availableHeight + 'px';
+        quizIframe.style.height = '100vh';
       }
       
       /**
@@ -318,65 +470,64 @@ export class ShopifyTemplateGenerator {
         // Handle quiz completion event
         if (event.data && event.data.type === 'quiz_completed' && event.data.redirectUrl) {
           console.log('✅ Quiz completed, redirecting to:', event.data.redirectUrl);
-          
-          // Redirect the parent page (Shopify page) to the product page
           window.location.href = event.data.redirectUrl;
         }
       });
       
       // Run immediately (in case DOM is already ready)
-      initialize();
-      
-      // Also run on DOM ready
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initialize);
-      } else {
-        // DOM already loaded, run immediately
-        setTimeout(initialize, 0);
-      }
-      
-      // Handle window resize to maintain full viewport
-      window.addEventListener('resize', function() {
-        const container = document.getElementById('quiz-container');
-        const iframe = document.getElementById("${iframeId}");
-        if (container) {
-          container.style.width = window.innerWidth + 'px';
-          container.style.height = window.innerHeight + 'px';
-          container.style.minHeight = window.innerHeight + 'px';
-        }
-        if (iframe) {
-          iframe.style.width = window.innerWidth + 'px';
-          iframe.style.height = window.innerHeight + 'px';
-          iframe.style.minHeight = window.innerHeight + 'px';
-        }
-        
-        // Re-hide page title (in case theme re-renders it)
-        hidePageTitle();
-        
-        // Re-break out of containers
-        breakOutOfContainers();
-      });
-      
-      // Use MutationObserver to catch dynamically added page titles
-      const observer = new MutationObserver(function(mutations) {
-        hidePageTitle();
-        breakOutOfContainers();
-      });
-      
-      // Start observing when DOM is ready
       if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", function() {
+          initialize();
+          
+          // Set up MutationObserver to catch dynamically added elements
+          const observer = new MutationObserver(function(mutations) {
+            hidePageTitle();
+            hideHeaderFooter();
+            if (!isMovedToBody) {
+              moveContainerToBody();
+              applyFixedPositioning();
+            }
+          });
+          
           observer.observe(document.body, {
             childList: true,
             subtree: true
           });
         });
       } else {
+        // DOM already loaded, run immediately
+        initialize();
+        
+        // Set up MutationObserver
+        const observer = new MutationObserver(function(mutations) {
+          hidePageTitle();
+          hideHeaderFooter();
+          if (!isMovedToBody) {
+            moveContainerToBody();
+            applyFixedPositioning();
+          }
+        });
+        
         observer.observe(document.body, {
           childList: true,
           subtree: true
         });
       }
+      
+      // Handle window resize
+      window.addEventListener('resize', function() {
+        updateDimensions();
+        hidePageTitle();
+        hideHeaderFooter();
+      });
+      
+      // Also handle orientation change
+      window.addEventListener('orientationchange', function() {
+        setTimeout(function() {
+          updateDimensions();
+          applyFixedPositioning();
+        }, 100);
+      });
     })();
   </script>
 `;
