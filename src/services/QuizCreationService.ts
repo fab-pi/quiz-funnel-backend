@@ -181,13 +181,15 @@ export class QuizCreationService extends BaseService {
         });
       }
 
-      // If this is a Shopify quiz, create custom template and Shopify page
+      // If this is a Shopify quiz, create Shopify page using default template (body_html)
+      // Note: Custom template approach (with templateSuffix) requires exemption approval
+      // This implementation uses the default page template with iframe in body_html
       let shopifyPageId: number | null = null;
       let shopifyPageHandle: string | null = null;
 
-      if (shopId && this.shopifyService && this.shopifyPagesService && this.shopifyThemesService && this.shopifyThemeAssetsService) {
+      if (shopId && this.shopifyService && this.shopifyPagesService) {
         try {
-          console.log(`🔄 Creating Shopify page with custom template for quiz ${quizId}...`);
+          console.log(`🔄 Creating Shopify page with default template for quiz ${quizId}...`);
           
           // Get shop information
           const shopResult = await client.query(
@@ -201,44 +203,28 @@ export class QuizCreationService extends BaseService {
             const shopDomain = shopResult.rows[0].shop_domain;
             const accessToken = shopResult.rows[0].access_token;
 
-            // Step 1: Get active theme GID (use original GID from Shopify, don't reconstruct)
-            console.log(`   Step 1: Getting active theme GID for shop ${shopDomain}...`);
-            const activeThemeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
-            
-            if (!activeThemeGid) {
-              throw new Error('Active theme not found for shop');
-            }
-            console.log(`   ✅ Active theme GID: ${activeThemeGid}`);
-
-            // Step 2: Generate full Liquid template content
-            console.log(`   Step 2: Generating full Liquid template...`);
-            const templateContent = this.templateGenerator.generateFullLiquidTemplate(
+            // Generate iframe template content (for body_html field)
+            // This uses the default page template, no custom template file needed
+            console.log(`   Step 1: Generating iframe template for body_html...`);
+            const iframeBodyContent = this.templateGenerator.generateQuizIframeTemplate(
               quizId,
               shopDomain,
               process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
             );
+            console.log(`   ✅ Iframe template generated`);
 
-            // Step 3: Upload template file to theme (use original GID directly)
-            console.log(`   Step 3: Uploading template file to theme...`);
-            await this.shopifyThemeAssetsService.createQuizAppTemplate(
-              shopDomain,
-              accessToken,
-              activeThemeGid,
-              templateContent
-            );
-            console.log(`   ✅ Template file uploaded: templates/page.quiz-app-iframe.liquid`);
-
-            // Step 4: Generate page title and handle
+            // Generate page title and handle
             const pageTitle = data.quiz_name;
             const pageHandle = `quiz-${quizId}`;
 
-            // Step 5: Create Shopify page with templateSuffix
-            console.log(`   Step 4: Creating Shopify page with templateSuffix...`);
+            // Create Shopify page using default template (no templateSuffix)
+            // The iframe HTML goes in the body field, which will be inserted into the default page template
+            console.log(`   Step 2: Creating Shopify page with default template...`);
             const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
               title: pageTitle,
-              body: '', // Empty body since template handles everything
+              body: iframeBodyContent, // Iframe HTML goes in body field
               handle: pageHandle,
-              templateSuffix: 'quiz-app-iframe', // Assign custom template
+              // No templateSuffix - uses default page template
             });
 
             shopifyPageId = pageResult.pageId;
@@ -253,7 +239,7 @@ export class QuizCreationService extends BaseService {
             );
 
             console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${shopifyPageHandle}`);
-            console.log(`   Using custom template: page.quiz-app-iframe.liquid`);
+            console.log(`   Using default page template with iframe in body_html`);
           }
         } catch (shopifyError: any) {
           // Log error but don't fail quiz creation
