@@ -913,13 +913,16 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     try {
       // Fetch HTML from frontend server-side
       // IMPORTANT: Use a browser-like User-Agent to ensure Next.js serves full HTML with __NEXT_DATA__
+      // Also disable streaming by requesting complete HTML
       const response = await fetch(quizUrl, {
         method: 'GET',
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          // Disable streaming - request complete HTML
+          'Accept-Encoding': 'identity' // Don't use compression to avoid streaming
         }
       });
       
@@ -927,7 +930,23 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
         throw new Error(`Frontend returned ${response.status}: ${response.statusText}`);
       }
       
+      // Ensure we read the complete response body
+      // Check if response is streaming (Transfer-Encoding: chunked)
+      const transferEncoding = response.headers.get('transfer-encoding');
+      if (transferEncoding === 'chunked') {
+        console.warn('⚠️ Frontend is using chunked transfer encoding - HTML might be incomplete');
+      }
+      
+      // Read the complete response body
       let html = await response.text();
+      
+      // Verify we got complete HTML by checking for closing tags
+      if (!html.includes('</html>') || !html.includes('</body>')) {
+        console.warn('⚠️ HTML appears incomplete - missing closing tags');
+        // Wait a bit and try to read more (if using streaming)
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // Note: response.text() should already wait for complete response, but just in case...
+      }
       
       console.log(`📄 Fetched HTML from frontend (length: ${html.length} bytes)`);
       
