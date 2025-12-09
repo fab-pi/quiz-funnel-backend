@@ -37,7 +37,7 @@ export class ShopifyPagesService extends BaseService {
       const handle = pageData.handle || this.generateHandleFromTitle(pageData.title);
 
       const mutation = `
-        mutation pageCreate($input: OnlineStorePageInput!) {
+        mutation pageCreate($input: PageCreateInput!) {
           pageCreate(input: $input) {
             page {
               id
@@ -137,7 +137,7 @@ export class ShopifyPagesService extends BaseService {
       const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
 
       const mutation = `
-        mutation pageUpdate($id: ID!, $input: OnlineStorePageInput!) {
+        mutation pageUpdate($id: ID!, $input: PageUpdateInput!) {
           pageUpdate(id: $id, input: $input) {
             page {
               id

@@ -309,7 +309,7 @@ export class QuizCreationService extends BaseService {
       } else if (shopId !== undefined && shopId !== null) {
         // Shopify user - check shop ownership
         if (quiz.shop_id !== shopId) {
-          throw new Error('Unauthorized: You do not own this quiz');
+        throw new Error('Unauthorized: You do not own this quiz');
         }
       } else if (userId !== null) {
         // Native user - check user ownership
@@ -450,7 +450,7 @@ export class QuizCreationService extends BaseService {
       } else if (shopId !== undefined && shopId !== null) {
         // Shopify user - check shop ownership
         if (quiz.shop_id !== shopId) {
-          throw new Error('Unauthorized: You do not own this quiz');
+        throw new Error('Unauthorized: You do not own this quiz');
         }
       } else if (userId !== null) {
         // Native user - check user ownership
