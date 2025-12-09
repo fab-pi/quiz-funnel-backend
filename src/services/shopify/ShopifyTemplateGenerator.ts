@@ -21,14 +21,9 @@ export class ShopifyTemplateGenerator {
     // Build quiz URL (using embed route for iframe)
     const quizBaseUrl = `${frontendUrl}/embed/quiz/${quizId}`;
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiz</title>
-  <meta name="robots" content="noindex, nofollow">
-  
+    // Return only the inner content (no <html>, <head>, <body> tags)
+    // Shopify will insert this into the theme's page template via {{ page.content }}
+    return `
   <style>
     /* Reset and base styles */
     * {
@@ -107,8 +102,7 @@ export class ShopifyTemplateGenerator {
       padding: 0 !important;
     }
   </style>
-</head>
-<body>
+  
   <div id="quiz-container">
     <iframe id="${iframeId}" width="100%" height="100%" frameborder="0"></iframe>
   </div>
@@ -176,8 +170,7 @@ export class ShopifyTemplateGenerator {
       });
     })();
   </script>
-</body>
-</html>`;
+`;
   }
 }
 
