@@ -39,7 +39,19 @@ export class ShopifyThemesService extends BaseService {
       `;
 
       // GraphqlParams expects data as string or object
-      const response = await client.query({
+      const response = await client.query<{
+        data: {
+          themes: {
+            edges: Array<{
+              node: {
+                id: string;
+                name: string;
+                role: string;
+              };
+            }>;
+          };
+        };
+      }>({
         data: query,
       });
 
@@ -103,7 +115,19 @@ export class ShopifyThemesService extends BaseService {
       `;
 
       // GraphqlParams expects data as string or object
-      const response = await client.query({
+      const response = await client.query<{
+        data: {
+          themes: {
+            edges: Array<{
+              node: {
+                id: string;
+                name: string;
+                role: string;
+              };
+            }>;
+          };
+        };
+      }>({
         data: query,
       });
 
