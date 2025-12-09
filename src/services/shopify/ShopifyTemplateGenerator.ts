@@ -103,21 +103,36 @@ export class ShopifyTemplateGenerator {
       overflow: hidden !important;
     }
     
-    /* Quiz container - fixed height of 2000px */
+    /* Quiz container - escape theme constraints using fixed positioning */
     #quiz-container {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
       width: 100% !important;
-      height: 2000px !important;
-      min-height: 2000px !important;
+      height: 100vh !important;
+      min-height: 100vh !important;
       margin: 0 !important;
       padding: 0 !important;
-      position: relative !important;
+      z-index: 9999 !important;
+      background: #fff !important;
     }
     
-    /* Iframe styling - fixed height of 2000px */
+    /* Alternative: Use absolute positioning if fixed doesn't work */
+    body #quiz-container {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+    }
+    
+    /* Iframe styling - full viewport */
     #${iframeId} {
+      width: 100vw !important;
       width: 100% !important;
-      height: 2000px !important;
-      min-height: 2000px !important;
+      height: 100vh !important;
+      min-height: 100vh !important;
       border: none !important;
       display: block !important;
       margin: 0 !important;
@@ -277,18 +292,18 @@ export class ShopifyTemplateGenerator {
         // Setup iframe
         setupIframe();
         
-        // Ensure quiz container has fixed 2000px height
+        // Ensure quiz container is full viewport
         const container = document.getElementById('quiz-container');
         const iframe = document.getElementById("${iframeId}");
         if (container) {
-          container.style.width = '100%';
-          container.style.height = '2000px';
-          container.style.minHeight = '2000px';
+          container.style.width = window.innerWidth + 'px';
+          container.style.height = window.innerHeight + 'px';
+          container.style.minHeight = window.innerHeight + 'px';
         }
         if (iframe) {
-          iframe.style.width = '100%';
-          iframe.style.height = '2000px';
-          iframe.style.minHeight = '2000px';
+          iframe.style.width = window.innerWidth + 'px';
+          iframe.style.height = window.innerHeight + 'px';
+          iframe.style.minHeight = window.innerHeight + 'px';
         }
       }
       
@@ -320,19 +335,19 @@ export class ShopifyTemplateGenerator {
         setTimeout(initialize, 0);
       }
       
-      // Handle window resize to maintain fixed 2000px height
+      // Handle window resize to maintain full viewport
       window.addEventListener('resize', function() {
         const container = document.getElementById('quiz-container');
         const iframe = document.getElementById("${iframeId}");
         if (container) {
-          container.style.width = '100%';
-          container.style.height = '2000px';
-          container.style.minHeight = '2000px';
+          container.style.width = window.innerWidth + 'px';
+          container.style.height = window.innerHeight + 'px';
+          container.style.minHeight = window.innerHeight + 'px';
         }
         if (iframe) {
-          iframe.style.width = '100%';
-          iframe.style.height = '2000px';
-          iframe.style.minHeight = '2000px';
+          iframe.style.width = window.innerWidth + 'px';
+          iframe.style.height = window.innerHeight + 'px';
+          iframe.style.minHeight = window.innerHeight + 'px';
         }
         
         // Re-hide page title (in case theme re-renders it)
