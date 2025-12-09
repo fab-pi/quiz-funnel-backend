@@ -4,17 +4,28 @@ import { QuizCreationRequest, QuizCreationResponse } from '../types';
 import { facebookPixelService } from './FacebookPixelService';
 import { ShopifyService } from './shopify/ShopifyService';
 import { ShopifyPagesService } from './shopify/ShopifyPagesService';
+import { ShopifyThemesService } from './shopify/ShopifyThemesService';
+import { ShopifyThemeAssetsService } from './shopify/ShopifyThemeAssetsService';
 import { ShopifyTemplateGenerator } from './shopify/ShopifyTemplateGenerator';
 
 export class QuizCreationService extends BaseService {
   private shopifyService: ShopifyService | null;
   private shopifyPagesService: ShopifyPagesService | null;
+  private shopifyThemesService: ShopifyThemesService | null;
+  private shopifyThemeAssetsService: ShopifyThemeAssetsService | null;
   private templateGenerator: ShopifyTemplateGenerator;
 
-  constructor(pool: Pool, shopifyService?: ShopifyService) {
+  constructor(
+    pool: Pool,
+    shopifyService?: ShopifyService,
+    shopifyThemesService?: ShopifyThemesService,
+    shopifyThemeAssetsService?: ShopifyThemeAssetsService
+  ) {
     super(pool);
     this.shopifyService = shopifyService || null;
     this.shopifyPagesService = shopifyService ? new ShopifyPagesService(pool, shopifyService) : null;
+    this.shopifyThemesService = shopifyThemesService || null;
+    this.shopifyThemeAssetsService = shopifyThemeAssetsService || null;
     this.templateGenerator = new ShopifyTemplateGenerator();
   }
 
@@ -170,13 +181,13 @@ export class QuizCreationService extends BaseService {
         });
       }
 
-      // If this is a Shopify quiz, create Shopify page
+      // If this is a Shopify quiz, create custom template and Shopify page
       let shopifyPageId: number | null = null;
       let shopifyPageHandle: string | null = null;
 
-      if (shopId && this.shopifyService && this.shopifyPagesService) {
+      if (shopId && this.shopifyService && this.shopifyPagesService && this.shopifyThemesService && this.shopifyThemeAssetsService) {
         try {
-          console.log(`🔄 Creating Shopify page for quiz ${quizId}...`);
+          console.log(`🔄 Creating Shopify page with custom template for quiz ${quizId}...`);
           
           // Get shop information
           const shopResult = await client.query(
@@ -190,22 +201,44 @@ export class QuizCreationService extends BaseService {
             const shopDomain = shopResult.rows[0].shop_domain;
             const accessToken = shopResult.rows[0].access_token;
 
-            // Generate page title and handle
-            const pageTitle = data.quiz_name;
-            const pageHandle = `quiz-${quizId}`;
+            // Step 1: Get active theme ID
+            console.log(`   Step 1: Getting active theme ID for shop ${shopDomain}...`);
+            const activeThemeId = await this.shopifyThemesService.getActiveThemeId(shopDomain, accessToken);
+            
+            if (!activeThemeId) {
+              throw new Error('Active theme not found for shop');
+            }
+            console.log(`   ✅ Active theme ID: ${activeThemeId}`);
 
-            // Generate Liquid template HTML
-            const templateHtml = this.templateGenerator.generateQuizIframeTemplate(
+            // Step 2: Generate full Liquid template content
+            console.log(`   Step 2: Generating full Liquid template...`);
+            const templateContent = this.templateGenerator.generateFullLiquidTemplate(
               quizId,
               shopDomain,
               process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
             );
 
-            // Create Shopify page
+            // Step 3: Upload template file to theme
+            console.log(`   Step 3: Uploading template file to theme...`);
+            await this.shopifyThemeAssetsService.createQuizAppTemplate(
+              shopDomain,
+              accessToken,
+              activeThemeId,
+              templateContent
+            );
+            console.log(`   ✅ Template file uploaded: templates/page.quiz-app-iframe.liquid`);
+
+            // Step 4: Generate page title and handle
+            const pageTitle = data.quiz_name;
+            const pageHandle = `quiz-${quizId}`;
+
+            // Step 5: Create Shopify page with templateSuffix
+            console.log(`   Step 4: Creating Shopify page with templateSuffix...`);
             const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
               title: pageTitle,
-              body: templateHtml,
+              body: '', // Empty body since template handles everything
               handle: pageHandle,
+              templateSuffix: 'quiz-app-iframe', // Assign custom template
             });
 
             shopifyPageId = pageResult.pageId;
@@ -220,6 +253,7 @@ export class QuizCreationService extends BaseService {
             );
 
             console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${shopifyPageHandle}`);
+            console.log(`   Using custom template: page.quiz-app-iframe.liquid`);
           }
         } catch (shopifyError: any) {
           // Log error but don't fail quiz creation

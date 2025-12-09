@@ -18,7 +18,7 @@ export class ShopifyPagesService extends BaseService {
    * Create a new Shopify page
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param pageData - Page data (title, body, handle)
+   * @param pageData - Page data (title, body, handle, templateSuffix)
    * @returns Created page ID and handle
    */
   async createPage(
@@ -28,6 +28,7 @@ export class ShopifyPagesService extends BaseService {
       title: string;
       body: string;
       handle?: string;
+      templateSuffix?: string;
     }
   ): Promise<{ pageId: number; handle: string }> {
     try {
@@ -52,7 +53,7 @@ export class ShopifyPagesService extends BaseService {
         }
       `;
 
-      const variables = {
+      const variables: any = {
         page: {
           title: pageData.title,
           body: pageData.body,
@@ -60,6 +61,11 @@ export class ShopifyPagesService extends BaseService {
           isPublished: true, // Publish the page immediately
         },
       };
+
+      // Add templateSuffix if provided
+      if (pageData.templateSuffix) {
+        variables.page.templateSuffix = pageData.templateSuffix;
+      }
 
       // GraphqlParams expects data as string or object with query/variables
       const response = await client.query<{
@@ -101,7 +107,13 @@ export class ShopifyPagesService extends BaseService {
         throw new Error(`Failed to extract page ID from GID: ${result.page.id}`);
       }
 
-      console.log(`✅ Shopify page created: ${result.page.title} (ID: ${pageId}, handle: ${result.page.handle})`);
+      console.log(`✅ Shopify page created: ${result.page.title}`);
+      console.log(`   - Full GID: ${result.page.id}`);
+      console.log(`   - Numeric ID: ${pageId}`);
+      console.log(`   - Handle: ${result.page.handle}`);
+      if (pageData.templateSuffix) {
+        console.log(`   - Template Suffix: ${pageData.templateSuffix}`);
+      }
 
       return {
         pageId,
@@ -117,8 +129,8 @@ export class ShopifyPagesService extends BaseService {
    * Update an existing Shopify page
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param pageId - Shopify page ID
-   * @param pageData - Page data to update (title, body, handle)
+   * @param pageId - Shopify page ID (numeric ID, will be converted to GID)
+   * @param pageData - Page data to update (title, body, handle, templateSuffix)
    * @returns Updated page ID and handle
    */
   async updatePage(
@@ -129,13 +141,16 @@ export class ShopifyPagesService extends BaseService {
       title?: string;
       body?: string;
       handle?: string;
+      templateSuffix?: string;
     }
   ): Promise<{ pageId: number; handle: string }> {
     try {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
+      // Note: Shopify uses OnlineStorePage as the resource type for pages
       const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      console.log(`🔄 Reconstructing GID for page update: ${pageGid} (from numeric ID: ${pageId})`);
 
       const mutation = `
         mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
@@ -168,6 +183,9 @@ export class ShopifyPagesService extends BaseService {
       if (pageData.handle !== undefined) {
         variables.page.handle = pageData.handle;
       }
+      if (pageData.templateSuffix !== undefined) {
+        variables.page.templateSuffix = pageData.templateSuffix;
+      }
 
       // GraphqlParams expects data as string or object with query/variables
       const response = await client.query<{
@@ -196,7 +214,11 @@ export class ShopifyPagesService extends BaseService {
 
       // Check for user errors
       if (result.userErrors && result.userErrors.length > 0) {
-        const errors = result.userErrors.map((e: any) => `${e.field}: ${e.message}`).join(', ');
+        const errors = result.userErrors.map((e: any) => {
+          const fieldStr = Array.isArray(e.field) ? e.field.join(', ') : e.field;
+          return `${fieldStr}: ${e.message}`;
+        }).join(', ');
+        console.error(`❌ Shopify pageUpdate userErrors for GID ${pageGid}:`, errors);
         throw new Error(`Shopify API errors: ${errors}`);
       }
 
@@ -232,7 +254,9 @@ export class ShopifyPagesService extends BaseService {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
+      // Note: Shopify uses OnlineStorePage as the resource type for pages
       const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      console.log(`🔄 Reconstructing GID for page delete: ${pageGid} (from numeric ID: ${pageId})`);
 
       const mutation = `
         mutation pageDelete($id: ID!) {
@@ -303,7 +327,9 @@ export class ShopifyPagesService extends BaseService {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
+      // Note: Shopify uses OnlineStorePage as the resource type for pages
       const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      console.log(`🔄 Reconstructing GID for page get: ${pageGid} (from numeric ID: ${pageId})`);
 
       const query = `
         query getPage($id: ID!) {

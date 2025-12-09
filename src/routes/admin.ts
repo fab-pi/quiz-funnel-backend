@@ -3,6 +3,8 @@ import { QuizCreationService } from '../services/QuizCreationService';
 import { AdminService } from '../services/AdminService';
 import { CloudinaryService } from '../services/CloudinaryService';
 import { ShopifyService } from '../services/shopify/ShopifyService';
+import { ShopifyThemesService } from '../services/shopify/ShopifyThemesService';
+import { ShopifyThemeAssetsService } from '../services/shopify/ShopifyThemeAssetsService';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
@@ -14,13 +16,25 @@ const router = Router();
 
 // Initialize ShopifyService (may fail if env vars not set, but that's OK for native users)
 let shopifyService: ShopifyService | null = null;
+let shopifyThemesService: ShopifyThemesService | null = null;
+let shopifyThemeAssetsService: ShopifyThemeAssetsService | null = null;
+
 try {
   shopifyService = new ShopifyService(pool);
+  if (shopifyService) {
+    shopifyThemesService = new ShopifyThemesService(pool, shopifyService);
+    shopifyThemeAssetsService = new ShopifyThemeAssetsService(pool, shopifyService);
+  }
 } catch (error) {
   console.warn('⚠️ ShopifyService not initialized (Shopify features disabled):', (error as Error).message);
 }
 
-const quizCreationService = new QuizCreationService(pool, shopifyService || undefined);
+const quizCreationService = new QuizCreationService(
+  pool,
+  shopifyService || undefined,
+  shopifyThemesService || undefined,
+  shopifyThemeAssetsService || undefined
+);
 const adminService = new AdminService(pool);
 const cloudinaryService = new CloudinaryService();
 
