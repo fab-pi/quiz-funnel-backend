@@ -67,6 +67,19 @@ function rewriteAssetUrls(html: string, frontendUrl: string): string {
     return `url("${baseUrl}/${path}")`;
   });
   
+  // CRITICAL: Rewrite URLs in RSC payload (self.__next_f.push() format)
+  // Next.js App Router uses RSC streaming with chunk paths like "/_next/static/chunks/..."
+  // These need to be absolute URLs for the scripts to load correctly
+  // Pattern: "/_next/static/chunks/..." inside quotes in the RSC payload
+  html = html.replace(/"(\/_next\/static\/[^"]+)"/g, (match, path) => {
+    // Don't rewrite if already absolute
+    if (path.includes('http://') || path.includes('https://')) {
+      return match;
+    }
+    // Rewrite relative paths in RSC payload to absolute URLs
+    return `"${baseUrl}${path}"`;
+  });
+  
   return html;
 }
 
