@@ -18,7 +18,7 @@ export class ShopifyPagesService extends BaseService {
    * Create a new Shopify page
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param pageData - Page data (title, body_html, handle)
+   * @param pageData - Page data (title, body, handle)
    * @returns Created page ID and handle
    */
   async createPage(
@@ -26,7 +26,7 @@ export class ShopifyPagesService extends BaseService {
     accessToken: string,
     pageData: {
       title: string;
-      bodyHtml: string;
+      body: string;
       handle?: string;
     }
   ): Promise<{ pageId: number; handle: string }> {
@@ -55,8 +55,9 @@ export class ShopifyPagesService extends BaseService {
       const variables = {
         page: {
           title: pageData.title,
-          bodyHtml: pageData.bodyHtml,
+          body: pageData.body,
           handle: handle,
+          isPublished: true, // Publish the page immediately
         },
       };
 
@@ -117,7 +118,7 @@ export class ShopifyPagesService extends BaseService {
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
    * @param pageId - Shopify page ID
-   * @param pageData - Page data to update (title, body_html, handle)
+   * @param pageData - Page data to update (title, body, handle)
    * @returns Updated page ID and handle
    */
   async updatePage(
@@ -126,7 +127,7 @@ export class ShopifyPagesService extends BaseService {
     pageId: number,
     pageData: {
       title?: string;
-      bodyHtml?: string;
+      body?: string;
       handle?: string;
     }
   ): Promise<{ pageId: number; handle: string }> {
@@ -161,8 +162,8 @@ export class ShopifyPagesService extends BaseService {
       if (pageData.title !== undefined) {
         variables.page.title = pageData.title;
       }
-      if (pageData.bodyHtml !== undefined) {
-        variables.page.bodyHtml = pageData.bodyHtml;
+      if (pageData.body !== undefined) {
+        variables.page.body = pageData.body;
       }
       if (pageData.handle !== undefined) {
         variables.page.handle = pageData.handle;
@@ -272,7 +273,10 @@ export class ShopifyPagesService extends BaseService {
 
       // Check for user errors
       if (result.userErrors && result.userErrors.length > 0) {
-        const errors = result.userErrors.map((e: any) => `${e.field}: ${e.message}`).join(', ');
+        const errors = result.userErrors.map((e: any) => {
+          const fieldStr = Array.isArray(e.field) ? e.field.join(', ') : e.field;
+          return `${fieldStr}: ${e.message}`;
+        }).join(', ');
         throw new Error(`Shopify API errors: ${errors}`);
       }
 

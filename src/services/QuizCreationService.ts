@@ -204,7 +204,7 @@ export class QuizCreationService extends BaseService {
             // Create Shopify page
             const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
               title: pageTitle,
-              bodyHtml: templateHtml,
+              body: templateHtml,
               handle: pageHandle,
             });
 
@@ -858,7 +858,7 @@ export class QuizCreationService extends BaseService {
               // Update Shopify page
               await this.shopifyPagesService.updatePage(shopDomain, accessToken, existingPageId, {
                 title: data.quiz_name, // Update title if quiz name changed
-                bodyHtml: templateHtml, // Update template with latest quiz data
+                body: templateHtml, // Update template with latest quiz data
                 // Keep existing handle
               });
 
@@ -886,7 +886,7 @@ export class QuizCreationService extends BaseService {
 
               const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
                 title: data.quiz_name,
-                bodyHtml: templateHtml,
+                body: templateHtml,
                 handle: pageHandle,
               });
 
