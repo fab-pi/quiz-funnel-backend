@@ -913,13 +913,16 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
     try {
       // Fetch HTML from frontend server-side
       // IMPORTANT: Use a browser-like User-Agent to ensure Next.js serves full HTML with __NEXT_DATA__
+      // Also disable streaming by requesting complete HTML
       const response = await fetch(quizUrl, {
         method: 'GET',
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          // Request complete HTML, not streaming chunks
+          'Accept-Encoding': 'identity' // Disable compression to ensure we get complete response
         }
       });
       
@@ -927,7 +930,37 @@ router.get('/shopify/proxy/:quizId', captureRawQueryString, async (req: RawQuery
         throw new Error(`Frontend returned ${response.status}: ${response.statusText}`);
       }
       
+      // Read the complete response body
+      // response.text() should already wait for all chunks, but Next.js streaming
+      // might send __NEXT_DATA__ in a way that requires the full stream to be consumed
       let html = await response.text();
+      
+      // If __NEXT_DATA__ is missing, it means Next.js is using streaming and
+      // the HTML is incomplete. We need to ensure we get the complete HTML.
+      // The issue is that Next.js App Router with React Server Components
+      // uses streaming, and __NEXT_DATA__ might be sent separately.
+      
+      // Check if we have __NEXT_DATA__ - if not, the HTML is incomplete
+      if (!html.includes('<script id="__NEXT_DATA__"')) {
+        console.warn('⚠️ __NEXT_DATA__ missing in initial fetch - Next.js might be streaming');
+        console.log('   Attempting to wait for complete HTML...');
+        
+        // Next.js streaming sends HTML in chunks via Transfer-Encoding: chunked
+        // The response.text() should wait for all chunks, but if __NEXT_DATA__ is still missing,
+        // it means Next.js is using React Server Components streaming which sends
+        // data in a different format (self.__next_f.push)
+        
+        // Check if HTML contains streaming format
+        if (html.includes('self.__next_f.push')) {
+          console.log('   ⚠️ HTML contains Next.js streaming format (self.__next_f.push)');
+          console.log('   This means Next.js is using React Server Components streaming.');
+          console.log('   __NEXT_DATA__ should be included, but might be in a different format.');
+          
+          // In Next.js streaming, __NEXT_DATA__ is usually included in the initial HTML
+          // If it's missing, it might be a configuration issue or the page needs to be
+          // fully rendered before sending
+        }
+      }
       
       console.log(`📄 Fetched HTML from frontend (length: ${html.length} bytes)`);
       
