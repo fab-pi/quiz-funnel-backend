@@ -19,7 +19,7 @@ export class ShopifyThemeAssetsService extends BaseService {
    * Uses GraphQL themeFilesUpsert mutation
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param themeId - Theme ID (numeric ID, will be converted to GID)
+   * @param themeGid - Theme GID (full GID string from Shopify, e.g., "gid://shopify/Theme/123456")
    * @param templatePath - Template file path (e.g., "templates/page.quiz-app-iframe.liquid")
    * @param templateContent - Liquid template content
    * @returns Success status
@@ -27,20 +27,28 @@ export class ShopifyThemeAssetsService extends BaseService {
   async upsertTemplateFile(
     shopDomain: string,
     accessToken: string,
-    themeId: number,
+    themeGid: string,
     templatePath: string,
     templateContent: string
   ): Promise<void> {
     try {
-      console.log(`🔄 Uploading template file: ${templatePath} to theme ${themeId} for shop ${shopDomain}...`);
+      console.log(`🔄 Uploading template file: ${templatePath} to theme ${themeGid} for shop ${shopDomain}...`);
 
       // Create GraphQL client
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
-      // Convert numeric theme ID to GID format
-      // GraphQL requires: gid://shopify/Theme/{numericId}
-      const themeGid = `gid://shopify/Theme/${themeId}`;
-      console.log(`   Theme GID: ${themeGid}`);
+      // Convert GID format if needed
+      // Themes query returns: gid://shopify/Theme/{id}
+      // themeFilesUpsert expects: gid://shopify/OnlineStoreTheme/{id}
+      let themeGidForMutation = themeGid;
+      if (themeGid.startsWith('gid://shopify/Theme/')) {
+        // Extract numeric ID and convert to OnlineStoreTheme format
+        const numericId = themeGid.replace('gid://shopify/Theme/', '');
+        themeGidForMutation = `gid://shopify/OnlineStoreTheme/${numericId}`;
+        console.log(`   Converted GID format: ${themeGid} -> ${themeGidForMutation}`);
+      } else {
+        console.log(`   Using theme GID as-is: ${themeGid}`);
+      }
 
       // GraphQL mutation: themeFilesUpsert
       const mutation = `
@@ -62,7 +70,7 @@ export class ShopifyThemeAssetsService extends BaseService {
       // - filename: String! (file path)
       // - body: OnlineStoreThemeFileBodyInput! (with type: "TEXT" and value: content)
       const variables = {
-        themeId: themeGid,
+        themeId: themeGidForMutation,
         files: [
           {
             filename: templatePath,
@@ -111,7 +119,8 @@ export class ShopifyThemeAssetsService extends BaseService {
       }
 
       console.log(`✅ Template file uploaded successfully: ${templatePath}`);
-      console.log(`   Theme ID: ${themeId} (GID: ${themeGid})`);
+      console.log(`   Original Theme GID: ${themeGid}`);
+      console.log(`   Mutation Theme GID: ${themeGidForMutation}`);
       console.log(`   Shop: ${shopDomain}`);
       console.log(`   Upserted files: ${result.upsertedThemeFiles.map(f => f.filename).join(', ')}`);
 
@@ -125,18 +134,18 @@ export class ShopifyThemeAssetsService extends BaseService {
    * Create the quiz app iframe template file
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param themeId - Theme ID (numeric ID)
+   * @param themeGid - Theme GID (full GID string from Shopify)
    * @param templateContent - Liquid template content
    * @returns Success status
    */
   async createQuizAppTemplate(
     shopDomain: string,
     accessToken: string,
-    themeId: number,
+    themeGid: string,
     templateContent: string
   ): Promise<void> {
     const templatePath = 'templates/page.quiz-app-iframe.liquid';
-    return this.upsertTemplateFile(shopDomain, accessToken, themeId, templatePath, templateContent);
+    return this.upsertTemplateFile(shopDomain, accessToken, themeGid, templatePath, templateContent);
   }
 
   /**
@@ -145,18 +154,18 @@ export class ShopifyThemeAssetsService extends BaseService {
    * This method is kept for future implementation or can be used to delete via REST API if needed
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param themeId - Theme ID (numeric ID)
+   * @param themeGid - Theme GID (full GID string from Shopify)
    * @param templatePath - Template file path (e.g., "templates/page.quiz-app-iframe.liquid")
    * @returns Success status
    */
   async deleteTemplateFile(
     shopDomain: string,
     accessToken: string,
-    themeId: number,
+    themeGid: string,
     templatePath: string
   ): Promise<void> {
     try {
-      console.log(`🔄 Deleting template file: ${templatePath} from theme ${themeId} for shop ${shopDomain}...`);
+      console.log(`🔄 Deleting template file: ${templatePath} from theme ${themeGid} for shop ${shopDomain}...`);
       console.warn(`⚠️ Note: GraphQL API doesn't support direct file deletion. Consider using REST API or leaving file in place.`);
       
       // TODO: Implement via REST API if needed, or use themeFilesUpsert with empty content
@@ -164,7 +173,6 @@ export class ShopifyThemeAssetsService extends BaseService {
       // This effectively "deletes" the file content
       
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
-      const themeGid = `gid://shopify/Theme/${themeId}`;
 
       const mutation = `
         mutation themeFilesUpsert($files: [OnlineStoreThemeFilesUpsertFileInput!]!, $themeId: ID!) {
@@ -234,16 +242,16 @@ export class ShopifyThemeAssetsService extends BaseService {
    * Delete the quiz app iframe template file
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param themeId - Theme ID (numeric ID)
+   * @param themeGid - Theme GID (full GID string from Shopify)
    * @returns Success status
    */
   async deleteQuizAppTemplate(
     shopDomain: string,
     accessToken: string,
-    themeId: number
+    themeGid: string
   ): Promise<void> {
     const templatePath = 'templates/page.quiz-app-iframe.liquid';
-    return this.deleteTemplateFile(shopDomain, accessToken, themeId, templatePath);
+    return this.deleteTemplateFile(shopDomain, accessToken, themeGid, templatePath);
   }
 
   /**
@@ -252,14 +260,14 @@ export class ShopifyThemeAssetsService extends BaseService {
    * This method attempts to read the file, if it fails, file doesn't exist
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param themeId - Theme ID (numeric ID)
+   * @param themeGid - Theme GID (full GID string from Shopify)
    * @param templatePath - Template file path (e.g., "templates/page.quiz-app-iframe.liquid")
    * @returns True if template exists, false otherwise
    */
   async templateFileExists(
     shopDomain: string,
     accessToken: string,
-    themeId: number,
+    themeGid: string,
     templatePath: string
   ): Promise<boolean> {
     try {

@@ -201,14 +201,14 @@ export class QuizCreationService extends BaseService {
             const shopDomain = shopResult.rows[0].shop_domain;
             const accessToken = shopResult.rows[0].access_token;
 
-            // Step 1: Get active theme ID
-            console.log(`   Step 1: Getting active theme ID for shop ${shopDomain}...`);
-            const activeThemeId = await this.shopifyThemesService.getActiveThemeId(shopDomain, accessToken);
+            // Step 1: Get active theme GID (use original GID from Shopify, don't reconstruct)
+            console.log(`   Step 1: Getting active theme GID for shop ${shopDomain}...`);
+            const activeThemeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
             
-            if (!activeThemeId) {
+            if (!activeThemeGid) {
               throw new Error('Active theme not found for shop');
             }
-            console.log(`   ✅ Active theme ID: ${activeThemeId}`);
+            console.log(`   ✅ Active theme GID: ${activeThemeGid}`);
 
             // Step 2: Generate full Liquid template content
             console.log(`   Step 2: Generating full Liquid template...`);
@@ -218,12 +218,12 @@ export class QuizCreationService extends BaseService {
               process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com'
             );
 
-            // Step 3: Upload template file to theme
+            // Step 3: Upload template file to theme (use original GID directly)
             console.log(`   Step 3: Uploading template file to theme...`);
             await this.shopifyThemeAssetsService.createQuizAppTemplate(
               shopDomain,
               accessToken,
-              activeThemeId,
+              activeThemeGid,
               templateContent
             );
             console.log(`   ✅ Template file uploaded: templates/page.quiz-app-iframe.liquid`);

@@ -15,12 +15,12 @@ export class ShopifyThemesService extends BaseService {
   }
 
   /**
-   * Get the active theme ID for a shop
+   * Get the active theme GID for a shop
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @returns Active theme ID or null if not found
+   * @returns Active theme GID (full GID string) or null if not found
    */
-  async getActiveThemeId(shopDomain: string, accessToken: string): Promise<number | null> {
+  async getActiveThemeGid(shopDomain: string, accessToken: string): Promise<string | null> {
     try {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
@@ -70,20 +70,35 @@ export class ShopifyThemesService extends BaseService {
         return null;
       }
 
-      // Extract numeric ID from Shopify GID (format: "gid://shopify/Theme/123456")
-      const themeId = this.extractIdFromGid(activeTheme.node.id);
+      // Use the original GID directly from Shopify (don't extract/reconstruct)
+      const themeGid = activeTheme.node.id;
       
-      if (!themeId) {
-        console.error(`❌ Failed to extract theme ID from GID: ${activeTheme.node.id}`);
+      if (!themeGid) {
+        console.error(`❌ Theme GID is missing from response`);
         return null;
       }
 
-      console.log(`✅ Active theme ID for ${shopDomain}: ${themeId} (${activeTheme.node.name})`);
-      return themeId;
+      console.log(`✅ Active theme GID for ${shopDomain}: ${themeGid} (${activeTheme.node.name})`);
+      return themeGid;
     } catch (error: any) {
       console.error(`❌ Error getting active theme for shop ${shopDomain}:`, error);
       throw new Error(`Failed to get active theme: ${error.message}`);
     }
+  }
+
+  /**
+   * Get the active theme ID for a shop (numeric ID only, for backward compatibility)
+   * @deprecated Use getActiveThemeGid() instead to get the full GID
+   * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
+   * @param accessToken - Shopify access token
+   * @returns Active theme ID (numeric) or null if not found
+   */
+  async getActiveThemeId(shopDomain: string, accessToken: string): Promise<number | null> {
+    const themeGid = await this.getActiveThemeGid(shopDomain, accessToken);
+    if (!themeGid) {
+      return null;
+    }
+    return this.extractIdFromGid(themeGid);
   }
 
   /**
