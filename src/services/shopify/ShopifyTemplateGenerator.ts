@@ -421,9 +421,19 @@ export class ShopifyTemplateGenerator {
       box-sizing: border-box;
     }
     
-    html, body {
+    html {
       width: 100%;
-      height: 100%;
+      height: 100vh;
+      min-height: 100vh;
+      max-height: 100vh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      width: 100%;
+      height: 100vh;
       min-height: 100vh;
       max-height: 100vh;
       overflow: hidden;
@@ -451,7 +461,7 @@ export class ShopifyTemplateGenerator {
     /* Iframe styling - full viewport */
     #${iframeId} {
       width: 100%;
-      height: 100%;
+      height: 100vh;
       min-height: 100vh;
       border: none;
       display: block;
@@ -509,39 +519,15 @@ export class ShopifyTemplateGenerator {
         }
       });
       
-      /**
-       * Ensure full viewport height
-       */
-      function ensureFullHeight() {
-        const container = document.getElementById('quiz-container');
-        const iframe = document.getElementById("${iframeId}");
-        
-        if (container) {
-          container.style.height = window.innerHeight + 'px';
-          container.style.minHeight = window.innerHeight + 'px';
-        }
-        
-        if (iframe) {
-          iframe.style.height = window.innerHeight + 'px';
-          iframe.style.minHeight = window.innerHeight + 'px';
-        }
-      }
-      
       // Initialize iframe when DOM is ready
+      // CSS handles full viewport height, no need for JavaScript manipulation
       if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", function() {
           setupIframe();
-          ensureFullHeight();
         });
       } else {
         setupIframe();
-        ensureFullHeight();
       }
-      
-      // Handle window resize to maintain full height
-      window.addEventListener('resize', function() {
-        ensureFullHeight();
-      });
     })();
   </script>
 </body>
