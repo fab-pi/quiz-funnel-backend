@@ -69,6 +69,7 @@ export class CloudinaryService {
    * Validate Cloudinary URL format
    * @param url - URL to validate
    * @returns boolean indicating if URL is valid Cloudinary URL
+   * @deprecated Use isValidImageUrl from urlValidator instead for multi-source support
    */
   isValidCloudinaryUrl(url: string): boolean {
     const cloudinaryUrlPattern = /^https:\/\/res\.cloudinary\.com\/[^\/]+\/image\/upload\/.*$/;
