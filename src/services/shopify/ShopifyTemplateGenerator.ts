@@ -403,8 +403,9 @@ export class ShopifyTemplateGenerator {
 
     // Return complete Liquid template file
     // This is a standalone template that will be used as page.quiz-app-iframe.liquid
-    // Note: Shopify may wrap this in theme layout, so we need aggressive CSS/JS to hide header/footer
-    return `<!DOCTYPE html>
+    // Using {% layout none %} to bypass theme.liquid wrapper completely
+    return `{% layout none %}
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -421,123 +422,41 @@ export class ShopifyTemplateGenerator {
     }
     
     html, body {
-      width: 100% !important;
-      height: 100% !important;
-      min-height: 100vh !important;
-      max-height: 100vh !important;
-      overflow-x: hidden !important;
-      overflow-y: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      width: 100%;
+      height: 100%;
+      min-height: 100vh;
+      max-height: 100vh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
     }
     
-    /* Hide Shopify theme header and footer - aggressive selectors */
-    #shopify-section-header,
-    #shopify-section-footer,
-    .shopify-section-header,
-    .shopify-section-footer,
-    .header-wrapper,
-    .footer-wrapper,
-    .site-header,
-    .site-footer,
-    header:not(#quiz-container header),
-    footer:not(#quiz-container footer),
-    nav:not(#quiz-container nav),
-    [class*="header"]:not(#quiz-container),
-    [class*="Header"]:not(#quiz-container),
-    [class*="footer"]:not(#quiz-container),
-    [class*="Footer"]:not(#quiz-container),
-    [id*="header"]:not(#quiz-container),
-    [id*="Header"]:not(#quiz-container),
-    [id*="footer"]:not(#quiz-container),
-    [id*="Footer"]:not(#quiz-container),
-    .shopify-section:has(header),
-    .shopify-section:has(footer),
-    section[class*="header"],
-    section[class*="footer"] {
-      display: none !important;
-      visibility: hidden !important;
-      height: 0 !important;
-      max-height: 0 !important;
-      overflow: hidden !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      opacity: 0 !important;
-      position: absolute !important;
-      left: -9999px !important;
-      z-index: -1 !important;
-    }
-    
-    /* Hide page title */
-    h1.page-title,
-    h1.section-header__title,
-    .page-title,
-    .section-header__title,
-    main h1:first-of-type,
-    #MainContent h1:first-of-type,
-    .main-content h1:first-of-type,
-    .page-content h1:first-of-type,
-    .template-page h1,
-    .page-header h1 {
-      display: none !important;
-      visibility: hidden !important;
-      height: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: hidden !important;
-    }
-    
-    /* Override all possible container constraints */
-    main,
-    .main-content,
-    .page-content,
-    #MainContent,
-    .container,
-    .page-container,
-    .content-wrapper,
-    .wrapper,
-    [class*="container"]:not(#quiz-container),
-    [class*="Container"]:not(#quiz-container),
-    [class*="wrapper"]:not(#quiz-container),
-    [class*="Wrapper"]:not(#quiz-container) {
-      height: 100vh !important;
-      min-height: 100vh !important;
-      max-width: 100% !important;
-      width: 100% !important;
-      width: 100vw !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      box-sizing: border-box !important;
-    }
-    
-    /* Quiz iframe container - fixed positioning to overlay everything */
+    /* Quiz iframe container - full viewport */
     #quiz-container {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      bottom: 0 !important;
-      width: 100vw !important;
-      width: 100% !important;
-      height: 100vh !important;
-      min-height: 100vh !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      z-index: 99999 !important;
-      background: #fff !important;
-      overflow: hidden !important;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      z-index: 99999;
+      background: #fff;
+      overflow: hidden;
     }
     
     /* Iframe styling - full viewport */
     #${iframeId} {
-      width: 100vw !important;
-      width: 100% !important;
-      height: 100vh !important;
-      min-height: 100vh !important;
-      border: none !important;
-      display: block !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      width: 100%;
+      height: 100%;
+      min-height: 100vh;
+      border: none;
+      display: block;
+      margin: 0;
+      padding: 0;
     }
   </style>
 </head>
@@ -548,115 +467,6 @@ export class ShopifyTemplateGenerator {
 
   <script>
     (function() {
-      /**
-       * Hide Shopify header and footer elements dynamically
-       */
-      function hideShopifyElements() {
-        const selectors = [
-          '#shopify-section-header',
-          '#shopify-section-footer',
-          '.shopify-section-header',
-          '.shopify-section-footer',
-          '.header-wrapper',
-          '.footer-wrapper',
-          '.site-header',
-          '.site-footer',
-          'header:not(#quiz-container header)',
-          'footer:not(#quiz-container footer)',
-          'nav:not(#quiz-container nav)',
-          '[class*="header"]:not(#quiz-container)',
-          '[class*="Header"]:not(#quiz-container)',
-          '[class*="footer"]:not(#quiz-container)',
-          '[class*="Footer"]:not(#quiz-container)',
-          '[id*="header"]:not(#quiz-container)',
-          '[id*="Header"]:not(#quiz-container)',
-          '[id*="footer"]:not(#quiz-container)',
-          '[id*="Footer"]:not(#quiz-container)'
-        ];
-        
-        selectors.forEach(selector => {
-          try {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
-              if (el && !el.closest('#quiz-container')) {
-                el.style.display = 'none';
-                el.style.visibility = 'hidden';
-                el.style.height = '0';
-                el.style.maxHeight = '0';
-                el.style.overflow = 'hidden';
-                el.style.margin = '0';
-                el.style.padding = '0';
-                el.style.opacity = '0';
-                el.style.position = 'absolute';
-                el.style.left = '-9999px';
-                el.style.zIndex = '-1';
-              }
-            });
-          } catch (e) {
-            // Ignore selector errors
-          }
-        });
-        
-        // Hide page titles
-        const titleSelectors = [
-          'h1.page-title',
-          'h1.section-header__title',
-          '.page-title',
-          '.section-header__title',
-          'main h1:first-of-type',
-          '#MainContent h1:first-of-type'
-        ];
-        
-        titleSelectors.forEach(selector => {
-          try {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
-              if (el && !el.closest('#quiz-container')) {
-                el.style.display = 'none';
-                el.style.visibility = 'hidden';
-                el.style.height = '0';
-                el.style.margin = '0';
-                el.style.padding = '0';
-                el.style.overflow = 'hidden';
-              }
-            });
-          } catch (e) {
-            // Ignore selector errors
-          }
-        });
-        
-        // Break out of container constraints
-        const containerSelectors = [
-          '.container',
-          '.page-container',
-          '.content-wrapper',
-          '.wrapper',
-          'main',
-          '.main-content',
-          '.page-content',
-          '#MainContent'
-        ];
-        
-        containerSelectors.forEach(selector => {
-          try {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
-              if (el && !el.closest('#quiz-container')) {
-                el.style.maxWidth = '100%';
-                el.style.width = '100%';
-                el.style.width = '100vw';
-                el.style.height = '100vh';
-                el.style.minHeight = '100vh';
-                el.style.margin = '0';
-                el.style.padding = '0';
-              }
-            });
-          } catch (e) {
-            // Ignore selector errors
-          }
-        });
-      }
-      
       /**
        * Setup iframe with UTM parameter passing
        */
@@ -699,45 +509,38 @@ export class ShopifyTemplateGenerator {
         }
       });
       
-      // Hide Shopify elements immediately
-      hideShopifyElements();
+      /**
+       * Ensure full viewport height
+       */
+      function ensureFullHeight() {
+        const container = document.getElementById('quiz-container');
+        const iframe = document.getElementById("${iframeId}");
+        
+        if (container) {
+          container.style.height = window.innerHeight + 'px';
+          container.style.minHeight = window.innerHeight + 'px';
+        }
+        
+        if (iframe) {
+          iframe.style.height = window.innerHeight + 'px';
+          iframe.style.minHeight = window.innerHeight + 'px';
+        }
+      }
       
       // Initialize iframe when DOM is ready
       if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", function() {
-          hideShopifyElements();
           setupIframe();
+          ensureFullHeight();
         });
       } else {
-        hideShopifyElements();
         setupIframe();
+        ensureFullHeight();
       }
-      
-      // Use MutationObserver to catch dynamically added elements
-      const observer = new MutationObserver(function(mutations) {
-        hideShopifyElements();
-      });
-      
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Also hide elements after delays to catch late-loading content
-      setTimeout(hideShopifyElements, 100);
-      setTimeout(hideShopifyElements, 500);
-      setTimeout(hideShopifyElements, 1000);
       
       // Handle window resize to maintain full height
       window.addEventListener('resize', function() {
-        const container = document.getElementById('quiz-container');
-        const iframe = document.getElementById("${iframeId}");
-        if (container && iframe) {
-          container.style.height = window.innerHeight + 'px';
-          container.style.minHeight = window.innerHeight + 'px';
-          iframe.style.height = window.innerHeight + 'px';
-        }
-        hideShopifyElements();
+        ensureFullHeight();
       });
     })();
   </script>
