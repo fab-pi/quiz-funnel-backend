@@ -148,8 +148,8 @@ export class ShopifyPagesService extends BaseService {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
-      // Note: Shopify uses OnlineStorePage as the resource type for pages
-      const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
+      const pageGid = `gid://shopify/Page/${pageId}`;
       console.log(`🔄 Reconstructing GID for page update: ${pageGid} (from numeric ID: ${pageId})`);
 
       const mutation = `
@@ -254,8 +254,8 @@ export class ShopifyPagesService extends BaseService {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
-      // Note: Shopify uses OnlineStorePage as the resource type for pages
-      const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
+      const pageGid = `gid://shopify/Page/${pageId}`;
       console.log(`🔄 Reconstructing GID for page delete: ${pageGid} (from numeric ID: ${pageId})`);
 
       const mutation = `
@@ -325,8 +325,8 @@ export class ShopifyPagesService extends BaseService {
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
       // Convert numeric ID to Shopify GID
-      // Note: Shopify uses OnlineStorePage as the resource type for pages
-      const pageGid = `gid://shopify/OnlineStorePage/${pageId}`;
+      // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
+      const pageGid = `gid://shopify/Page/${pageId}`;
       console.log(`🔄 Reconstructing GID for page get: ${pageGid} (from numeric ID: ${pageId})`);
 
       const query = `
@@ -388,12 +388,12 @@ export class ShopifyPagesService extends BaseService {
 
   /**
    * Extract numeric ID from Shopify GID (Global ID)
-   * @param gid - Shopify GID (e.g., "gid://shopify/OnlineStorePage/123456")
+   * @param gid - Shopify GID (e.g., "gid://shopify/Page/123456")
    * @returns Numeric ID or null if extraction fails
    */
   private extractIdFromGid(gid: string): number | null {
     try {
-      // Shopify GID format: "gid://shopify/OnlineStorePage/123456"
+      // Shopify GID format: "gid://shopify/Page/123456" (or other resource types)
       const parts = gid.split('/');
       const id = parts[parts.length - 1];
       const numericId = parseInt(id, 10);
