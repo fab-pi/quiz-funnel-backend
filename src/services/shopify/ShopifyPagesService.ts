@@ -261,7 +261,6 @@ export class ShopifyPagesService extends BaseService {
       const mutation = `
         mutation pageDelete($id: ID!) {
           pageDelete(id: $id) {
-            deletedId
             userErrors {
               field
               message
@@ -278,7 +277,6 @@ export class ShopifyPagesService extends BaseService {
       const response = await client.query<{
         data: {
           pageDelete: {
-            deletedId: string;
             userErrors: Array<{ field: string[]; message: string }>;
           };
         };
@@ -295,7 +293,7 @@ export class ShopifyPagesService extends BaseService {
 
       const result = response.body.data.pageDelete;
 
-      // Check for user errors
+      // Check for user errors - if no errors, deletion was successful
       if (result.userErrors && result.userErrors.length > 0) {
         const errors = result.userErrors.map((e: any) => {
           const fieldStr = Array.isArray(e.field) ? e.field.join(', ') : e.field;
