@@ -53,6 +53,7 @@ export class AdminService extends BaseService {
           q.custom_domain,
           q.shopify_page_handle,
           s.shop_domain,
+          s.primary_domain,
           COUNT(DISTINCT us.session_id) as quiz_starts,
           COUNT(DISTINCT CASE WHEN us.is_completed = true THEN us.session_id END) as quiz_completions,
           CASE 
@@ -70,7 +71,7 @@ export class AdminService extends BaseService {
           AND (qu.is_archived = false OR qu.is_archived IS NULL)
         LEFT JOIN shops s ON q.shop_id = s.shop_id AND s.uninstalled_at IS NULL
         ${whereClause}
-        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id, q.shop_id, q.custom_domain, q.shopify_page_handle, s.shop_domain
+        GROUP BY q.quiz_id, q.quiz_name, q.product_page_url, q.quiz_start_url, q.is_active, q.user_id, q.shop_id, q.custom_domain, q.shopify_page_handle, s.shop_domain, s.primary_domain
         ORDER BY q.quiz_id DESC
       `, queryParams);
       

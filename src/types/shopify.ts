@@ -5,6 +5,7 @@
 export interface Shop {
   shopId: number;
   shopDomain: string;
+  primaryDomain: string | null;
   accessToken: string;
   scope: string | null;
   installedAt: Date;
@@ -16,6 +17,7 @@ export interface Shop {
 export interface ShopDatabaseRow {
   shop_id: number;
   shop_domain: string;
+  primary_domain: string | null;
   access_token: string;
   scope: string | null;
   installed_at: Date;

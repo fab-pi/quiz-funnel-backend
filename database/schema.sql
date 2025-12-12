@@ -68,6 +68,7 @@ CREATE TABLE email_tokens (
 CREATE TABLE shops (
     shop_id SERIAL PRIMARY KEY,
     shop_domain VARCHAR(255) UNIQUE NOT NULL,
+    primary_domain VARCHAR(255) NULL, -- Primary domain for the Shopify store (e.g., shop.brandx.com). NULL means store uses default myshopify.com domain.
     access_token TEXT NOT NULL,
     scope TEXT,
     installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -193,6 +194,8 @@ CREATE INDEX idx_shops_installed ON shops(shop_domain)
     WHERE uninstalled_at IS NULL;
 CREATE INDEX idx_shops_uninstalled ON shops(uninstalled_at) 
     WHERE uninstalled_at IS NOT NULL;
+CREATE INDEX idx_shops_primary_domain ON shops(primary_domain) 
+    WHERE primary_domain IS NOT NULL;
 
 -- Quizzes table indexes for shop_id
 CREATE INDEX idx_quizzes_shop_id ON quizzes(shop_id) 
@@ -288,6 +291,7 @@ COMMENT ON COLUMN email_tokens.token IS 'Plain text token for one-time use (mini
 COMMENT ON COLUMN email_tokens.token_type IS 'Type of token: email_verification or password_reset';
 COMMENT ON COLUMN email_tokens.used_at IS 'Timestamp when token was used (NULL if not used yet)';
 COMMENT ON COLUMN shops.shop_domain IS 'Shop domain (e.g., mystore.myshopify.com)';
+COMMENT ON COLUMN shops.primary_domain IS 'Primary domain for the Shopify store (e.g., shop.brandx.com). NULL means store uses default myshopify.com domain. This is the custom domain that customers see when visiting the store.';
 COMMENT ON COLUMN shops.access_token IS 'Shopify OAuth access token (should be encrypted in production)';
 COMMENT ON COLUMN shops.scope IS 'Comma-separated list of granted OAuth scopes';
 COMMENT ON COLUMN shops.installed_at IS 'Timestamp when app was installed';

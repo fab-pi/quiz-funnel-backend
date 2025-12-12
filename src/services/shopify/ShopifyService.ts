@@ -61,6 +61,15 @@ export class ShopifyService extends BaseService {
     const client = await this.pool.connect();
 
     try {
+      // Fetch primary domain from Shopify API
+      let primaryDomain: string | null = null;
+      try {
+        primaryDomain = await this.getShopPrimaryDomain(data.shopDomain, data.accessToken);
+      } catch (error: any) {
+        // Log but don't fail - primary domain is optional
+        console.warn(`⚠️ Failed to fetch primary domain for ${data.shopDomain}:`, error.message);
+      }
+
       // Check if shop already exists
       const existingShop = await client.query<ShopDatabaseRow>(
         'SELECT * FROM shops WHERE shop_domain = $1',
@@ -73,26 +82,27 @@ export class ShopifyService extends BaseService {
           `UPDATE shops 
            SET access_token = $1, 
                scope = $2, 
+               primary_domain = $4,
                installed_at = CURRENT_TIMESTAMP,
                uninstalled_at = NULL,
                updated_at = CURRENT_TIMESTAMP
            WHERE shop_domain = $3
            RETURNING *`,
-          [data.accessToken, data.scope, data.shopDomain]
+          [data.accessToken, data.scope, data.shopDomain, primaryDomain]
         );
 
-        console.log(`✅ Shop updated: ${data.shopDomain}`);
+        console.log(`✅ Shop updated: ${data.shopDomain}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
         return this.mapShopFromDatabase(result.rows[0]);
       } else {
         // Insert new shop
         const result = await client.query<ShopDatabaseRow>(
-          `INSERT INTO shops (shop_domain, access_token, scope, installed_at)
-           VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+          `INSERT INTO shops (shop_domain, access_token, scope, primary_domain, installed_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
            RETURNING *`,
-          [data.shopDomain, data.accessToken, data.scope]
+          [data.shopDomain, data.accessToken, data.scope, primaryDomain]
         );
 
-        console.log(`✅ Shop stored: ${data.shopDomain}`);
+        console.log(`✅ Shop stored: ${data.shopDomain}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
         return this.mapShopFromDatabase(result.rows[0]);
       }
     } catch (error: any) {
@@ -223,6 +233,60 @@ export class ShopifyService extends BaseService {
     (session as any).accessToken = accessToken;
     
     return new this.shopify.clients.Graphql({ session });
+  }
+
+  /**
+   * Get shop primary domain from Shopify GraphQL API
+   * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
+   * @param accessToken - Shopify access token
+   * @returns Primary domain (e.g., shop.brandx.com) or null if not set
+   */
+  async getShopPrimaryDomain(shopDomain: string, accessToken: string): Promise<string | null> {
+    try {
+      const client = await this.createGraphQLClient(shopDomain, accessToken);
+
+      const query = `
+        query getShopPrimaryDomain {
+          shop {
+            primaryDomain {
+              host
+            }
+          }
+        }
+      `;
+
+      const response = await client.query<{
+        data: {
+          shop: {
+            primaryDomain: {
+              host: string;
+            } | null;
+          };
+        };
+      }>({
+        data: query,
+      });
+
+      if (!response || !response.body || !response.body.data) {
+        console.error('❌ Invalid response from Shopify shop query');
+        return null;
+      }
+
+      const primaryDomain = response.body.data.shop?.primaryDomain?.host || null;
+
+      if (primaryDomain) {
+        console.log(`✅ Primary domain for ${shopDomain}: ${primaryDomain}`);
+      } else {
+        console.log(`ℹ️ No primary domain set for ${shopDomain} (using default myshopify.com domain)`);
+      }
+
+      return primaryDomain;
+    } catch (error: any) {
+      console.error(`❌ Error getting primary domain for shop ${shopDomain}:`, error);
+      // Don't throw - return null so shop creation can continue
+      // Primary domain is optional, shop_domain is the fallback
+      return null;
+    }
   }
 
   /**
@@ -422,6 +486,7 @@ export class ShopifyService extends BaseService {
     return {
       shopId: row.shop_id,
       shopDomain: row.shop_domain,
+      primaryDomain: row.primary_domain || null,
       accessToken: row.access_token,
       scope: row.scope,
       installedAt: row.installed_at,
