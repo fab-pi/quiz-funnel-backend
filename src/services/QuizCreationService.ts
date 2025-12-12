@@ -1012,7 +1012,7 @@ export class QuizCreationService extends BaseService {
       }
 
       // Delete Shopify page if exists
-      if (quiz.shopify_page_id && this.shopifyService && this.shopifyPagesService) {
+      if (quiz.shopify_page_id && quiz.shop_id && this.shopifyService && this.shopifyPagesService) {
         try {
           console.log(`🔄 Deleting Shopify page ${quiz.shopify_page_id} for quiz ${quizId}...`);
           
@@ -1039,6 +1039,9 @@ export class QuizCreationService extends BaseService {
           console.error(`   Quiz deletion will continue. Error: ${shopifyError.message}`);
           // Continue with quiz deletion - don't throw error
         }
+      } else if (quiz.shopify_page_id && !quiz.shop_id) {
+        // Edge case: quiz has shopify_page_id but no shop_id (data inconsistency)
+        console.warn(`⚠️ Quiz ${quizId} has shopify_page_id (${quiz.shopify_page_id}) but no shop_id. Skipping Shopify page deletion.`);
       }
 
       // Delete quiz (CASCADE will delete questions, options, sessions, answers)
