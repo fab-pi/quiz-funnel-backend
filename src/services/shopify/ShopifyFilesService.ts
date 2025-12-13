@@ -59,7 +59,7 @@ export class ShopifyFilesService extends BaseService {
 
       // Step 1: Create staged upload target
       console.log(`   Step 1: Creating staged upload target...`);
-      const stagedUploadResult = await this.createStagedUpload(client, filename, mimeType, fileBuffer.length);
+      const stagedUploadResult = await this.createStagedUploadInternal(client, filename, mimeType, fileBuffer.length);
       
       if (!stagedUploadResult.stagedTargets || stagedUploadResult.stagedTargets.length === 0) {
         throw new Error('No staged upload targets returned from Shopify');
@@ -75,7 +75,7 @@ export class ShopifyFilesService extends BaseService {
 
       // Step 3: Create file in Shopify using resourceUrl
       console.log(`   Step 3: Creating file record in Shopify...`);
-      const cdnUrl = await this.createFileFromStagedUpload(client, stagedTarget.resourceUrl, filename);
+      const cdnUrl = await this.createFileFromStagedUploadInternal(client, stagedTarget.resourceUrl, filename);
       console.log(`   ✅ File created in Shopify: ${cdnUrl}`);
 
       return cdnUrl;
@@ -86,9 +86,42 @@ export class ShopifyFilesService extends BaseService {
   }
 
   /**
-   * Step 1: Create staged upload target
+   * Create staged upload target (Step 1 of Shopify's recommended flow)
+   * Returns signed URL and parameters for direct client upload
+   * @param shopDomain - Shop domain
+   * @param accessToken - Shopify access token
+   * @param filename - Original filename
+   * @param mimeType - File MIME type
+   * @param fileSize - File size in bytes
+   * @returns Staged upload target with URL, resourceUrl, and parameters
    */
-  private async createStagedUpload(
+  async createStagedUpload(
+    shopDomain: string,
+    accessToken: string,
+    filename: string,
+    mimeType: string,
+    fileSize: number
+  ): Promise<{
+    url: string;
+    resourceUrl: string;
+    parameters: Array<{ name: string; value: string }>;
+  }> {
+    // Create GraphQL client
+    const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+    
+    const result = await this.createStagedUploadInternal(client, filename, mimeType, fileSize);
+    
+    if (!result.stagedTargets || result.stagedTargets.length === 0) {
+      throw new Error('No staged upload targets returned from Shopify');
+    }
+    
+    return result.stagedTargets[0];
+  }
+
+  /**
+   * Internal method: Create staged upload target (uses GraphQL client)
+   */
+  private async createStagedUploadInternal(
     client: any,
     filename: string,
     mimeType: string,
@@ -220,9 +253,30 @@ export class ShopifyFilesService extends BaseService {
   }
 
   /**
-   * Step 3: Create file in Shopify using resourceUrl from staged upload
+   * Finalize file upload (Step 3 of Shopify's recommended flow)
+   * Creates file record in Shopify using resourceUrl from staged upload
+   * @param shopDomain - Shop domain
+   * @param accessToken - Shopify access token
+   * @param resourceUrl - Resource URL from staged upload
+   * @param filename - Original filename
+   * @returns Shopify CDN URL
    */
-  private async createFileFromStagedUpload(
+  async finalizeFileUpload(
+    shopDomain: string,
+    accessToken: string,
+    resourceUrl: string,
+    filename: string
+  ): Promise<string> {
+    // Create GraphQL client
+    const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+    
+    return await this.createFileFromStagedUploadInternal(client, resourceUrl, filename);
+  }
+
+  /**
+   * Internal method: Create file in Shopify using resourceUrl from staged upload
+   */
+  private async createFileFromStagedUploadInternal(
     client: any,
     resourceUrl: string,
     filename: string
