@@ -17,75 +17,6 @@ export class ShopifyFilesService extends BaseService {
   }
 
   /**
-   * Upload a file to Shopify Files API using staged uploads
-   * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
-   * @param fileBuffer - File buffer
-   * @param filename - Original filename
-   * @param mimeType - File MIME type (e.g., 'image/jpeg', 'image/png')
-   * @returns Shopify CDN URL
-   */
-  async uploadFile(
-    shopDomain: string,
-    accessToken: string,
-    fileBuffer: Buffer,
-    filename: string,
-    mimeType: string
-  ): Promise<string> {
-    try {
-      console.log(`🔄 Starting staged upload to Shopify: ${filename} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB)`);
-
-      // Validate file size (Shopify limit: 20MB)
-      const maxSizeBytes = 20 * 1024 * 1024; // 20MB
-      if (fileBuffer.length > maxSizeBytes) {
-        throw new Error(`File size exceeds Shopify's 20MB limit. File size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-      }
-
-      // Validate file type (images only)
-      const allowedMimeTypes = [
-        'image/jpeg',
-        'image/jpg',
-        'image/png',
-        'image/gif',
-        'image/webp',
-        'image/svg+xml'
-      ];
-      if (!allowedMimeTypes.includes(mimeType.toLowerCase())) {
-        throw new Error(`Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}. Received: ${mimeType}`);
-      }
-
-      // Create GraphQL client
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
-
-      // Step 1: Create staged upload target
-      console.log(`   Step 1: Creating staged upload target...`);
-      const stagedUploadResult = await this.createStagedUploadInternal(client, filename, mimeType, fileBuffer.length);
-      
-      if (!stagedUploadResult.stagedTargets || stagedUploadResult.stagedTargets.length === 0) {
-        throw new Error('No staged upload targets returned from Shopify');
-      }
-
-      const stagedTarget = stagedUploadResult.stagedTargets[0];
-      console.log(`   ✅ Staged upload target created: ${stagedTarget.url}`);
-
-      // Step 2: Upload file to staged target URL
-      console.log(`   Step 2: Uploading file to staged target...`);
-      await this.uploadToStagedTarget(stagedTarget, fileBuffer, filename, mimeType);
-      console.log(`   ✅ File uploaded to staged target`);
-
-      // Step 3: Create file in Shopify using resourceUrl
-      console.log(`   Step 3: Creating file record in Shopify...`);
-      const cdnUrl = await this.createFileFromStagedUploadInternal(client, stagedTarget.resourceUrl, filename);
-      console.log(`   ✅ File created in Shopify: ${cdnUrl}`);
-
-      return cdnUrl;
-    } catch (error: any) {
-      console.error(`❌ Error uploading file to Shopify:`, error);
-      throw new Error(`Failed to upload file to Shopify: ${error.message || 'Unknown error'}`);
-    }
-  }
-
-  /**
    * Create staged upload target (Step 1 of Shopify's recommended flow)
    * Returns signed URL and parameters for direct client upload
    * @param shopDomain - Shop domain
@@ -197,59 +128,6 @@ export class ShopifyFilesService extends BaseService {
     }
 
     return { stagedTargets, userErrors: [] };
-  }
-
-  /**
-   * Step 2: Upload file to staged target URL
-   * Note: Parameters must be added BEFORE the file, and file must be last
-   */
-  private async uploadToStagedTarget(
-    stagedTarget: {
-      url: string;
-      resourceUrl: string;
-      parameters: Array<{ name: string; value: string }>;
-    },
-    fileBuffer: Buffer,
-    filename: string,
-    mimeType: string
-  ): Promise<void> {
-    // Log parameters for debugging
-    console.log(`   Staged target parameters:`, JSON.stringify(stagedTarget.parameters, null, 2));
-    
-    // Create multipart/form-data
-    const formData = new FormData();
-    
-    // IMPORTANT: Add parameters FIRST (order matters for signature)
-    stagedTarget.parameters.forEach(param => {
-      formData.append(param.name, param.value);
-    });
-    
-    // IMPORTANT: Add file LAST (must be the last field)
-    // The field name should match what Shopify expects - typically "file"
-    formData.append('file', fileBuffer, {
-      filename: filename,
-      contentType: mimeType
-    });
-
-    // Get headers from FormData (includes Content-Type with boundary)
-    const headers = formData.getHeaders();
-    
-    // Upload to staged target URL
-    // Note: Do NOT override Content-Type - FormData sets it correctly with boundary
-    const uploadResponse = await fetch(stagedTarget.url, {
-      method: 'POST',
-      body: formData,
-      headers: headers
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error(`❌ Failed to upload to staged target: ${uploadResponse.status}`);
-      console.error(`   Response: ${errorText.substring(0, 500)}`); // Log first 500 chars
-      throw new Error(`Failed to upload file to staged target: ${uploadResponse.status} ${errorText.substring(0, 200)}`);
-    }
-
-    console.log(`   ✅ File uploaded to staged target successfully`);
   }
 
   /**
