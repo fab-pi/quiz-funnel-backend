@@ -5,6 +5,7 @@ import { CloudinaryService } from '../services/CloudinaryService';
 import { ShopifyService } from '../services/shopify/ShopifyService';
 import { ShopifyThemesService } from '../services/shopify/ShopifyThemesService';
 import { ShopifyThemeAssetsService } from '../services/shopify/ShopifyThemeAssetsService';
+import { isValidImageUrl } from '../utils/urlValidator';
 import pool from '../config/db';
 import { QuizCreationRequest } from '../types';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
@@ -123,10 +124,10 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
     }
 
     // Validate image URLs if provided
-    if (data.brand_logo_url && !cloudinaryService.isValidCloudinaryUrl(data.brand_logo_url)) {
+    if (data.brand_logo_url && !isValidImageUrl(data.brand_logo_url)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid brand_logo_url format. Must be a valid Cloudinary URL.'
+        message: 'Invalid brand_logo_url format. Must be a valid image URL (Cloudinary or Shopify CDN).'
       });
     }
 
@@ -152,10 +153,10 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
       const questionLabel = question.question_text || `Question (${question.interaction_type})`;
 
       // Validate question image URL if provided
-      if (question.image_url && !cloudinaryService.isValidCloudinaryUrl(question.image_url)) {
+      if (question.image_url && !isValidImageUrl(question.image_url)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid image_url format for question "${questionLabel}". Must be a valid Cloudinary URL.`
+          message: `Invalid image_url format for question "${questionLabel}". Must be a valid image URL (Cloudinary or Shopify CDN).`
         });
       }
 
@@ -187,10 +188,10 @@ router.post('/admin/quiz', authenticate, async (req: AuthRequest, res: Response)
         }
 
         // Validate option image URLs if provided
-        if (option.option_image_url && !cloudinaryService.isValidCloudinaryUrl(option.option_image_url)) {
+        if (option.option_image_url && !isValidImageUrl(option.option_image_url)) {
           return res.status(400).json({
             success: false,
-            message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid Cloudinary URL.`
+            message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid image URL (Cloudinary or Shopify CDN).`
           });
         }
         }
@@ -299,10 +300,10 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
     }
 
     // Validate image URLs if provided
-    if (data.brand_logo_url && !cloudinaryService.isValidCloudinaryUrl(data.brand_logo_url)) {
+    if (data.brand_logo_url && !isValidImageUrl(data.brand_logo_url)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid brand_logo_url format. Must be a valid Cloudinary URL.'
+        message: 'Invalid brand_logo_url format. Must be a valid image URL (Cloudinary or Shopify CDN).'
       });
     }
 
@@ -349,10 +350,10 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
       const questionLabel = question.question_text || `Question (${question.interaction_type})`;
 
       // Validate question image URL if provided
-      if (question.image_url && !cloudinaryService.isValidCloudinaryUrl(question.image_url)) {
+      if (question.image_url && !isValidImageUrl(question.image_url)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid image_url format for question "${questionLabel}". Must be a valid Cloudinary URL.`
+          message: `Invalid image_url format for question "${questionLabel}". Must be a valid image URL (Cloudinary or Shopify CDN).`
         });
       }
 
@@ -384,10 +385,10 @@ router.put('/admin/quiz/:quizId', authenticate, async (req: AuthRequest, res: Re
           }
 
           // Validate option image URLs if provided
-          if (option.option_image_url && !cloudinaryService.isValidCloudinaryUrl(option.option_image_url)) {
+          if (option.option_image_url && !isValidImageUrl(option.option_image_url)) {
             return res.status(400).json({
               success: false,
-              message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid Cloudinary URL.`
+              message: `Invalid option_image_url format for option "${option.option_text}". Must be a valid image URL (Cloudinary or Shopify CDN).`
             });
           }
         }
