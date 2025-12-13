@@ -59,7 +59,7 @@ export class ShopifyFilesService extends BaseService {
 
       // Step 1: Create staged upload target
       console.log(`   Step 1: Creating staged upload target...`);
-      const stagedUploadResult = await this.createStagedUpload(client, filename, mimeType);
+      const stagedUploadResult = await this.createStagedUpload(client, filename, mimeType, fileBuffer.length);
       
       if (!stagedUploadResult.stagedTargets || stagedUploadResult.stagedTargets.length === 0) {
         throw new Error('No staged upload targets returned from Shopify');
@@ -91,7 +91,8 @@ export class ShopifyFilesService extends BaseService {
   private async createStagedUpload(
     client: any,
     filename: string,
-    mimeType: string
+    mimeType: string,
+    fileSize: number
   ): Promise<{
     stagedTargets: Array<{
       url: string;
@@ -132,7 +133,9 @@ export class ShopifyFilesService extends BaseService {
         {
           filename: filename,
           mimeType: mimeType,
-          resource: resourceType
+          resource: resourceType,
+          httpMethod: 'POST', // Explicitly set POST method for multipart upload
+          fileSize: fileSize.toString() // Include file size for signature calculation
         }
       ]
     };
