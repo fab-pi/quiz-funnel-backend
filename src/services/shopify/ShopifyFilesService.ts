@@ -286,16 +286,109 @@ export class ShopifyFilesService extends BaseService {
     }
 
     const createdFile = files[0];
+    const fileId = createdFile.id;
 
     // Log file status for debugging
     console.log(`   File status: ${createdFile.fileStatus}`);
 
-    // Extract CDN URL from image object
-    if (!createdFile.image || !createdFile.image.url) {
-      console.error('❌ No image URL in response:', JSON.stringify(createdFile, null, 2));
-      throw new Error('No image URL returned from Shopify fileCreate mutation');
+    // If file is already READY, return URL immediately
+    if (createdFile.fileStatus === 'READY' && createdFile.image?.url) {
+      return createdFile.image.url;
     }
 
-    return createdFile.image.url;
+    // If file is UPLOADED, poll until it becomes READY
+    if (createdFile.fileStatus === 'UPLOADED') {
+      console.log(`   File is UPLOADED, polling for READY status...`);
+      return await this.pollFileUntilReady(client, fileId, filename);
+    }
+
+    // If status is something else, throw error
+    console.error('❌ Unexpected file status:', JSON.stringify(createdFile, null, 2));
+    throw new Error(`File status is ${createdFile.fileStatus}, expected READY or UPLOADED`);
+  }
+
+  /**
+   * Poll file until it becomes READY and returns image URL
+   */
+  private async pollFileUntilReady(
+    client: any,
+    fileId: string,
+    filename: string,
+    maxAttempts: number = 30,
+    delayMs: number = 1000
+  ): Promise<string> {
+    const query = `
+      query getFile($id: ID!) {
+        node(id: $id) {
+          ... on MediaImage {
+            id
+            fileStatus
+            image {
+              url
+              altText
+            }
+          }
+        }
+      }
+    `;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`   Polling attempt ${attempt}/${maxAttempts}...`);
+
+      try {
+        const response = await client.query({
+          data: {
+            query: query,
+            variables: { id: fileId }
+          }
+        });
+
+        const data = response.body?.data;
+        if (!data || !data.node) {
+          console.log(`   ⚠️ File not found, waiting...`);
+          await this.sleep(delayMs);
+          continue;
+        }
+
+        const file = data.node as {
+          id: string;
+          fileStatus: string;
+          image?: {
+            url: string;
+            altText: string | null;
+          };
+        };
+
+        console.log(`   File status: ${file.fileStatus}`);
+
+        if (file.fileStatus === 'READY' && file.image?.url) {
+          console.log(`   ✅ File is READY, URL: ${file.image.url}`);
+          return file.image.url;
+        }
+
+        if (file.fileStatus === 'FAILED') {
+          throw new Error(`File processing failed for ${filename}`);
+        }
+
+        // Wait before next attempt
+        if (attempt < maxAttempts) {
+          await this.sleep(delayMs);
+        }
+      } catch (error: any) {
+        console.error(`   ⚠️ Error polling file (attempt ${attempt}):`, error.message);
+        if (attempt < maxAttempts) {
+          await this.sleep(delayMs);
+        }
+      }
+    }
+
+    throw new Error(`File did not become READY after ${maxAttempts} attempts (${maxAttempts * delayMs / 1000}s timeout)`);
+  }
+
+  /**
+   * Sleep utility for polling
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
