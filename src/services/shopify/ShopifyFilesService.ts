@@ -165,6 +165,7 @@ export class ShopifyFilesService extends BaseService {
 
   /**
    * Step 2: Upload file to staged target URL
+   * Note: Parameters must be added BEFORE the file, and file must be last
    */
   private async uploadToStagedTarget(
     stagedTarget: {
@@ -176,31 +177,40 @@ export class ShopifyFilesService extends BaseService {
     filename: string,
     mimeType: string
   ): Promise<void> {
+    // Log parameters for debugging
+    console.log(`   Staged target parameters:`, JSON.stringify(stagedTarget.parameters, null, 2));
+    
     // Create multipart/form-data
     const formData = new FormData();
     
-    // Add parameters from staged target
+    // IMPORTANT: Add parameters FIRST (order matters for signature)
     stagedTarget.parameters.forEach(param => {
       formData.append(param.name, param.value);
     });
     
-    // Add the file
+    // IMPORTANT: Add file LAST (must be the last field)
+    // The field name should match what Shopify expects - typically "file"
     formData.append('file', fileBuffer, {
       filename: filename,
       contentType: mimeType
     });
 
+    // Get headers from FormData (includes Content-Type with boundary)
+    const headers = formData.getHeaders();
+    
     // Upload to staged target URL
+    // Note: Do NOT override Content-Type - FormData sets it correctly with boundary
     const uploadResponse = await fetch(stagedTarget.url, {
       method: 'POST',
       body: formData,
-      headers: formData.getHeaders()
+      headers: headers
     });
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
-      console.error(`❌ Failed to upload to staged target: ${uploadResponse.status} ${errorText}`);
-      throw new Error(`Failed to upload file to staged target: ${uploadResponse.status} ${errorText}`);
+      console.error(`❌ Failed to upload to staged target: ${uploadResponse.status}`);
+      console.error(`   Response: ${errorText.substring(0, 500)}`); // Log first 500 chars
+      throw new Error(`Failed to upload file to staged target: ${uploadResponse.status} ${errorText.substring(0, 200)}`);
     }
 
     console.log(`   ✅ File uploaded to staged target successfully`);
