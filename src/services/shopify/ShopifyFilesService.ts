@@ -1,10 +1,12 @@
 import { Pool } from 'pg';
 import { BaseService } from '../BaseService';
 import { ShopifyService } from './ShopifyService';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 
 /**
  * Shopify Files Service
- * Handles file uploads to Shopify Files API via GraphQL
+ * Handles file uploads to Shopify Files API using staged uploads (recommended method)
  */
 export class ShopifyFilesService extends BaseService {
   private shopifyService: ShopifyService;
@@ -15,10 +17,10 @@ export class ShopifyFilesService extends BaseService {
   }
 
   /**
-   * Upload a file to Shopify Files API
+   * Upload a file to Shopify Files API using staged uploads
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
    * @param accessToken - Shopify access token
-   * @param fileBuffer - File buffer (from multipart/form-data)
+   * @param fileBuffer - File buffer
    * @param filename - Original filename
    * @param mimeType - File MIME type (e.g., 'image/jpeg', 'image/png')
    * @returns Shopify CDN URL
@@ -31,7 +33,7 @@ export class ShopifyFilesService extends BaseService {
     mimeType: string
   ): Promise<string> {
     try {
-      console.log(`🔄 Uploading file to Shopify: ${filename} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB)`);
+      console.log(`🔄 Starting staged upload to Shopify: ${filename} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB)`);
 
       // Validate file size (Shopify limit: 20MB)
       const maxSizeBytes = 20 * 1024 * 1024; // 20MB
@@ -55,109 +57,26 @@ export class ShopifyFilesService extends BaseService {
       // Create GraphQL client
       const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
 
-      // Convert file buffer to base64 for GraphQL mutation
-      const base64File = fileBuffer.toString('base64');
-
-      // GraphQL mutation: fileCreate
-      // According to Shopify docs, fileCreate accepts:
-      // - files: [FileCreateInput!]!
-      //   - FileCreateInput:
-      //     - originalSource: String! (base64 encoded file)
-      //     - alt: String (optional alt text)
-      //     - contentType: FileContentType (IMAGE, VIDEO, etc.)
-      const mutation = `
-        mutation fileCreate($files: [FileCreateInput!]!) {
-          fileCreate(files: $files) {
-            files {
-              id
-              fileStatus
-              ... on MediaImage {
-                image {
-                  url
-                  altText
-                }
-              }
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-      `;
-
-      // Determine content type from MIME type
-      let contentType = 'IMAGE'; // Default to IMAGE
-      if (mimeType.startsWith('video/')) {
-        contentType = 'VIDEO';
+      // Step 1: Create staged upload target
+      console.log(`   Step 1: Creating staged upload target...`);
+      const stagedUploadResult = await this.createStagedUpload(client, filename, mimeType);
+      
+      if (!stagedUploadResult.stagedTargets || stagedUploadResult.stagedTargets.length === 0) {
+        throw new Error('No staged upload targets returned from Shopify');
       }
 
-      const variables = {
-        files: [
-          {
-            originalSource: base64File,
-            alt: filename,
-            contentType: contentType
-          }
-        ]
-      };
+      const stagedTarget = stagedUploadResult.stagedTargets[0];
+      console.log(`   ✅ Staged upload target created: ${stagedTarget.url}`);
 
-      // Execute GraphQL mutation
-      const response = await client.query<{
-        data: {
-          fileCreate: {
-            files: Array<{
-              id: string;
-              fileStatus: string;
-              image?: {
-                url: string;
-                altText: string | null;
-              };
-            }>;
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
-        data: {
-          query: mutation,
-          variables: variables
-        }
-      });
+      // Step 2: Upload file to staged target URL
+      console.log(`   Step 2: Uploading file to staged target...`);
+      await this.uploadToStagedTarget(stagedTarget, fileBuffer, filename, mimeType);
+      console.log(`   ✅ File uploaded to staged target`);
 
-      // Check for user errors
-      const data = response.body?.data;
-      if (!data || !data.fileCreate) {
-        throw new Error('Invalid response from Shopify fileCreate mutation');
-      }
-
-      const { files, userErrors } = data.fileCreate;
-
-      if (userErrors && userErrors.length > 0) {
-        const errorMessages = userErrors.map((e: any) => {
-          const field = Array.isArray(e.field) ? e.field.join('.') : e.field;
-          return `${field}: ${e.message}`;
-        }).join(', ');
-        throw new Error(`Shopify fileCreate user errors: ${errorMessages}`);
-      }
-
-      if (!files || files.length === 0) {
-        throw new Error('No files returned from Shopify fileCreate mutation');
-      }
-
-      const uploadedFile = files[0];
-
-      // Check file status
-      if (uploadedFile.fileStatus !== 'READY') {
-        throw new Error(`File upload not ready. Status: ${uploadedFile.fileStatus}`);
-      }
-
-      // Extract CDN URL from image object
-      if (!uploadedFile.image || !uploadedFile.image.url) {
-        throw new Error('No image URL returned from Shopify fileCreate mutation');
-      }
-
-      const cdnUrl = uploadedFile.image.url;
-      console.log(`✅ File uploaded successfully: ${cdnUrl}`);
+      // Step 3: Create file in Shopify using resourceUrl
+      console.log(`   Step 3: Creating file record in Shopify...`);
+      const cdnUrl = await this.createFileFromStagedUpload(client, stagedTarget.resourceUrl, filename);
+      console.log(`   ✅ File created in Shopify: ${cdnUrl}`);
 
       return cdnUrl;
     } catch (error: any) {
@@ -165,5 +84,205 @@ export class ShopifyFilesService extends BaseService {
       throw new Error(`Failed to upload file to Shopify: ${error.message || 'Unknown error'}`);
     }
   }
-}
 
+  /**
+   * Step 1: Create staged upload target
+   */
+  private async createStagedUpload(
+    client: any,
+    filename: string,
+    mimeType: string
+  ): Promise<{
+    stagedTargets: Array<{
+      url: string;
+      resourceUrl: string;
+      parameters: Array<{ name: string; value: string }>;
+    }>;
+    userErrors: Array<{ field: string[]; message: string }>;
+  }> {
+    const mutation = `
+      mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters {
+              name
+              value
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    // Determine resource type from MIME type
+    let resourceType = 'IMAGE';
+    if (mimeType.startsWith('video/')) {
+      resourceType = 'VIDEO';
+    } else if (mimeType.includes('model') || mimeType.includes('3d')) {
+      resourceType = 'MODEL_3D';
+    }
+
+    const variables = {
+      input: [
+        {
+          filename: filename,
+          mimeType: mimeType,
+          resource: resourceType
+        }
+      ]
+    };
+
+    const response = await client.query({
+      data: {
+        query: mutation,
+        variables: variables
+      }
+    });
+
+    const data = response.body?.data;
+    if (!data || !data.stagedUploadsCreate) {
+      console.error('❌ Invalid response from stagedUploadsCreate:', JSON.stringify(response.body, null, 2));
+      throw new Error('Invalid response from Shopify stagedUploadsCreate mutation');
+    }
+
+    const { stagedTargets, userErrors } = data.stagedUploadsCreate;
+
+    if (userErrors && userErrors.length > 0) {
+      const errorMessages = userErrors.map((e: any) => {
+        const field = Array.isArray(e.field) ? e.field.join('.') : e.field;
+        return `${field}: ${e.message}`;
+      }).join(', ');
+      throw new Error(`Shopify stagedUploadsCreate user errors: ${errorMessages}`);
+    }
+
+    return { stagedTargets, userErrors: [] };
+  }
+
+  /**
+   * Step 2: Upload file to staged target URL
+   */
+  private async uploadToStagedTarget(
+    stagedTarget: {
+      url: string;
+      resourceUrl: string;
+      parameters: Array<{ name: string; value: string }>;
+    },
+    fileBuffer: Buffer,
+    filename: string,
+    mimeType: string
+  ): Promise<void> {
+    // Create multipart/form-data
+    const formData = new FormData();
+    
+    // Add parameters from staged target
+    stagedTarget.parameters.forEach(param => {
+      formData.append(param.name, param.value);
+    });
+    
+    // Add the file
+    formData.append('file', fileBuffer, {
+      filename: filename,
+      contentType: mimeType
+    });
+
+    // Upload to staged target URL
+    const uploadResponse = await fetch(stagedTarget.url, {
+      method: 'POST',
+      body: formData,
+      headers: formData.getHeaders()
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error(`❌ Failed to upload to staged target: ${uploadResponse.status} ${errorText}`);
+      throw new Error(`Failed to upload file to staged target: ${uploadResponse.status} ${errorText}`);
+    }
+
+    console.log(`   ✅ File uploaded to staged target successfully`);
+  }
+
+  /**
+   * Step 3: Create file in Shopify using resourceUrl from staged upload
+   */
+  private async createFileFromStagedUpload(
+    client: any,
+    resourceUrl: string,
+    filename: string
+  ): Promise<string> {
+    const mutation = `
+      mutation fileCreate($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files {
+            id
+            fileStatus
+            ... on MediaImage {
+              image {
+                url
+                altText
+              }
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      files: [
+        {
+          originalSource: resourceUrl,
+          alt: filename
+        }
+      ]
+    };
+
+    const response = await client.query({
+      data: {
+        query: mutation,
+        variables: variables
+      }
+    });
+
+    const data = response.body?.data;
+    if (!data || !data.fileCreate) {
+      console.error('❌ Invalid response from fileCreate:', JSON.stringify(response.body, null, 2));
+      throw new Error('Invalid response from Shopify fileCreate mutation');
+    }
+
+    const { files, userErrors } = data.fileCreate;
+
+    if (userErrors && userErrors.length > 0) {
+      const errorMessages = userErrors.map((e: any) => {
+        const field = Array.isArray(e.field) ? e.field.join('.') : e.field;
+        return `${field}: ${e.message}`;
+      }).join(', ');
+      throw new Error(`Shopify fileCreate user errors: ${errorMessages}`);
+    }
+
+    if (!files || files.length === 0) {
+      console.error('❌ No files returned from fileCreate:', JSON.stringify(response.body, null, 2));
+      throw new Error('No files returned from Shopify fileCreate mutation');
+    }
+
+    const createdFile = files[0];
+
+    // Log file status for debugging
+    console.log(`   File status: ${createdFile.fileStatus}`);
+
+    // Extract CDN URL from image object
+    if (!createdFile.image || !createdFile.image.url) {
+      console.error('❌ No image URL in response:', JSON.stringify(createdFile, null, 2));
+      throw new Error('No image URL returned from Shopify fileCreate mutation');
+    }
+
+    return createdFile.image.url;
+  }
+}
