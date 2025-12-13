@@ -60,8 +60,11 @@ app.use(cors(corsOptions));
 // Iframe-friendly headers middleware (allows embedding)
 app.use(iframeHeaders);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase JSON body size limit to 50MB to handle base64-encoded file uploads
+// Base64 encoding increases size by ~33%, so 20MB file becomes ~27MB in base64
+// 50MB limit provides comfortable margin for Shopify's 20MB file limit
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
