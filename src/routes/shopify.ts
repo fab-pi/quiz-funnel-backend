@@ -669,6 +669,44 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
 });
 
 /**
+ * PUT /api/shopify/shop/refresh-primary-domain
+ * Refreshes the primary domain for the authenticated shop
+ * Fetches current primary domain from Shopify API and updates database
+ * Protected: Requires Shopify authentication
+ */
+router.put('/shopify/shop/refresh-primary-domain', shopifyAuthenticate, async (req: ShopifyRequest, res: Response) => {
+  try {
+    const shopDomain = req.shop;
+    if (!shopDomain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop domain is required'
+      });
+    }
+
+    console.log(`🔄 Refreshing primary domain for shop: ${shopDomain}`);
+
+    // Update primary domain (only if changed)
+    const result = await shopifyService.updatePrimaryDomain(shopDomain);
+
+    res.json({
+      success: true,
+      data: {
+        primaryDomain: result.primaryDomain,
+        updated: result.updated
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error refreshing primary domain:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to refresh primary domain'
+    });
+  }
+});
+
+/**
  * POST /api/shopify/webhooks/app/uninstalled
  * Handles app uninstall webhook from Shopify
  * Marks shop as uninstalled in database

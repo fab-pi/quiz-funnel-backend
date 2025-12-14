@@ -290,6 +290,90 @@ export class ShopifyService extends BaseService {
   }
 
   /**
+   * Update primary domain for an existing shop
+   * Fetches current primary domain from Shopify API and updates database only if changed
+   * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
+   * @returns Updated primary domain or null if not set, and whether it was actually updated
+   */
+  async updatePrimaryDomain(shopDomain: string): Promise<{ primaryDomain: string | null; updated: boolean }> {
+    const client = await this.pool.connect();
+
+    try {
+      // Get shop from database to get access token and current primary domain
+      const shop = await this.getShopByDomain(shopDomain);
+      if (!shop) {
+        throw new Error(`Shop not found: ${shopDomain}`);
+      }
+
+      const currentPrimaryDomain = shop.primaryDomain;
+
+      // Fetch current primary domain from Shopify API
+      const newPrimaryDomain = await this.getShopPrimaryDomain(shopDomain, shop.accessToken);
+
+      // Only update if the value actually changed
+      const hasChanged = currentPrimaryDomain !== newPrimaryDomain;
+
+      if (hasChanged) {
+        // Update database
+        await client.query(
+          `UPDATE shops 
+           SET primary_domain = $1, 
+               updated_at = CURRENT_TIMESTAMP
+           WHERE shop_domain = $2`,
+          [newPrimaryDomain, shopDomain]
+        );
+
+        // Update all quiz URLs for this shop to use the new primary domain
+        const shop = await this.getShopByDomain(shopDomain);
+        if (shop) {
+          const domain = newPrimaryDomain || shopDomain;
+          
+          // Get all quizzes for this shop that have Shopify pages
+          const quizzesResult = await client.query(
+            `SELECT quiz_id, shopify_page_handle 
+             FROM quizzes 
+             WHERE shop_id = $1 AND shopify_page_handle IS NOT NULL`,
+            [shop.shopId]
+          );
+
+          // Update quiz_start_url for each quiz
+          for (const quiz of quizzesResult.rows) {
+            const shopifyPageUrl = `https://${domain}/pages/${quiz.shopify_page_handle}`;
+            await client.query(
+              `UPDATE quizzes 
+               SET quiz_start_url = $1 
+               WHERE quiz_id = $2`,
+              [shopifyPageUrl, quiz.quiz_id]
+            );
+          }
+
+          if (quizzesResult.rows.length > 0) {
+            console.log(`   Updated ${quizzesResult.rows.length} quiz URL(s) to use domain: ${domain}`);
+          }
+        }
+
+        if (newPrimaryDomain) {
+          console.log(`✅ Primary domain updated for ${shopDomain}: ${newPrimaryDomain} (was: ${currentPrimaryDomain || 'none'})`);
+        } else {
+          console.log(`ℹ️ Primary domain cleared for ${shopDomain} (was: ${currentPrimaryDomain})`);
+        }
+      } else {
+        console.log(`ℹ️ Primary domain unchanged for ${shopDomain}: ${newPrimaryDomain || 'none'}`);
+      }
+
+      return {
+        primaryDomain: newPrimaryDomain,
+        updated: hasChanged
+      };
+    } catch (error: any) {
+      console.error(`❌ Error updating primary domain for shop ${shopDomain}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Get shop information from Shopify API
    * Note: This requires proper session storage implementation
    * For now, this is a placeholder for future implementation

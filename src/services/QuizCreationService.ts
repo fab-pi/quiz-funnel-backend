@@ -90,16 +90,19 @@ export class QuizCreationService extends BaseService {
       const quizId = quizResult.rows[0].quiz_id;
       console.log(`✅ Quiz created with ID: ${quizId}`);
 
-      // Generate and update quiz_start_url
+      // Generate quiz_start_url (will be updated after Shopify page creation if applicable)
+      // For now, set default frontend URL (will be updated if Shopify page is created)
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const quizStartUrl = `${frontendUrl}/quiz/${quizId}`;
+      let quizStartUrl = `${frontendUrl}/quiz/${quizId}`;
       
+      // If this is a Shopify quiz, we'll update the URL after creating the Shopify page
+      // For now, just set the default
       await client.query(`
         UPDATE quizzes 
         SET quiz_start_url = $1 
         WHERE quiz_id = $2
       `, [quizStartUrl, quizId]);
-      console.log(`✅ Quiz start URL generated: ${quizStartUrl}`);
+      console.log(`✅ Quiz start URL generated (temporary): ${quizStartUrl}`);
 
       // Insert questions and options
       const createdQuestions = [];
@@ -257,16 +260,28 @@ export class QuizCreationService extends BaseService {
             });
             console.log(`   ✅ Page linked to template: ${templateSuffix}`);
 
-            // Step 6: Update quiz with Shopify page information
+            // Step 6: Get shop's primary domain to generate correct URL
+            const shopInfoResult = await client.query(
+              'SELECT primary_domain FROM shops WHERE shop_id = $1',
+              [shopId]
+            );
+            const primaryDomain = shopInfoResult.rows[0]?.primary_domain || null;
+            const domain = primaryDomain || shopDomain;
+
+            // Step 7: Update quiz with Shopify page information and correct quiz_start_url
+            const shopifyPageUrl = `https://${domain}/pages/${shopifyPageHandle}`;
             await client.query(
               `UPDATE quizzes 
-               SET shopify_page_id = $1, shopify_page_handle = $2 
-               WHERE quiz_id = $3`,
-              [shopifyPageId, shopifyPageHandle, quizId]
+               SET shopify_page_id = $1, 
+                   shopify_page_handle = $2,
+                   quiz_start_url = $3
+               WHERE quiz_id = $4`,
+              [shopifyPageId, shopifyPageHandle, shopifyPageUrl, quizId]
             );
 
-            console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${shopifyPageHandle}`);
+            console.log(`✅ Shopify page created for quiz ${quizId}: ${domain}/pages/${shopifyPageHandle}`);
             console.log(`   Using custom template: ${templatePath}`);
+            console.log(`   Quiz start URL updated to: ${shopifyPageUrl}`);
           }
         } catch (shopifyError: any) {
           // Log error but don't fail quiz creation
@@ -936,7 +951,24 @@ export class QuizCreationService extends BaseService {
                 // Keep existing handle
               });
 
-              console.log(`✅ Shopify page updated for quiz ${quizId}: ${shopDomain}/pages/${existingPageHandle}`);
+              // Update quiz_start_url with correct domain (primary domain if available)
+              const shopInfoResult = await client.query(
+                'SELECT primary_domain FROM shops WHERE shop_id = $1',
+                [shopId]
+              );
+              const primaryDomain = shopInfoResult.rows[0]?.primary_domain || null;
+              const domain = primaryDomain || shopDomain;
+              const shopifyPageUrl = `https://${domain}/pages/${existingPageHandle}`;
+              
+              await client.query(
+                `UPDATE quizzes 
+                 SET quiz_start_url = $1 
+                 WHERE quiz_id = $2`,
+                [shopifyPageUrl, quizId]
+              );
+
+              console.log(`✅ Shopify page updated for quiz ${quizId}: ${domain}/pages/${existingPageHandle}`);
+              console.log(`   Quiz start URL updated to: ${shopifyPageUrl}`);
             }
           } else {
             // No existing page - create one (quiz might have been created before Shopify integration)
@@ -993,15 +1025,27 @@ export class QuizCreationService extends BaseService {
                 templateSuffix: templateSuffix,
               });
 
-              // Step 6: Update quiz with Shopify page information
+              // Step 6: Get shop's primary domain to generate correct URL
+              const shopInfoResult = await client.query(
+                'SELECT primary_domain FROM shops WHERE shop_id = $1',
+                [shopId]
+              );
+              const primaryDomain = shopInfoResult.rows[0]?.primary_domain || null;
+              const domain = primaryDomain || shopDomain;
+
+              // Step 7: Update quiz with Shopify page information and correct quiz_start_url
+              const shopifyPageUrl = `https://${domain}/pages/${pageResult.handle}`;
               await client.query(
                 `UPDATE quizzes 
-                 SET shopify_page_id = $1, shopify_page_handle = $2 
-                 WHERE quiz_id = $3`,
-                [newPageId, pageResult.handle, quizId]
+                 SET shopify_page_id = $1, 
+                     shopify_page_handle = $2,
+                     quiz_start_url = $3
+                 WHERE quiz_id = $4`,
+                [newPageId, pageResult.handle, shopifyPageUrl, quizId]
               );
 
-              console.log(`✅ Shopify page created for quiz ${quizId}: ${shopDomain}/pages/${pageResult.handle}`);
+              console.log(`✅ Shopify page created for quiz ${quizId}: ${domain}/pages/${pageResult.handle}`);
+              console.log(`   Quiz start URL updated to: ${shopifyPageUrl}`);
             }
           }
         } catch (shopifyError: any) {
