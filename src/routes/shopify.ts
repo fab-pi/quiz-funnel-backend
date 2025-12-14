@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
 import { QuizContentService } from '../services/QuizContentService';
 import { captureRawQueryString, RawQueryRequest } from '../middleware/rawQueryString';
+import { shopifyAuthenticate, ShopifyRequest } from '../middleware/shopifyAuth';
 import pool from '../config/db';
 
 const router = Router();
