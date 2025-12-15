@@ -547,57 +547,12 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
       });
     }
 
-    const embedded = req.query.embedded as string;
-    const host = req.query.host as string;
-    
-    console.log(`🔄 Initiating OAuth for shop: ${shop} (embedded: ${embedded || 'no'})`);
+    console.log(`🔄 Initiating OAuth for shop: ${shop}`);
 
-    // CRITICAL: For embedded apps (embedded=1), we MUST return HTML that breaks out of iframe
-    // Shopify blocks accounts.shopify.com from being loaded in iframes (X-Frame-Options: deny)
-    // So we need to redirect the TOP window, not the iframe
-    if (embedded === '1') {
-      // Build OAuth URL without embedded parameter (will load in top window)
-      // IMPORTANT: req.path is '/shopify/auth' but routes are mounted under '/api'
-      // So we need to add '/api' prefix to the path
-      const oauthParams = new URLSearchParams();
-      oauthParams.set('shop', shop);
-      if (host) oauthParams.set('host', host);
-      // Don't include embedded=1 - OAuth will happen in top window
-      
-      // req.path is '/shopify/auth', but routes are mounted under '/api'
-      // So the full path should be '/api/shopify/auth'
-      const fullPath = `/api${req.path}`;
-      const oauthUrl = `${req.protocol}://${req.get('host')}${fullPath}?${oauthParams.toString()}`;
-      
-      console.log(`🔍 Building OAuth URL for embedded app: ${oauthUrl}`);
-      
-      // Return HTML that breaks out of iframe and redirects to OAuth
-      // This HTML will be executed in the iframe, but redirects the TOP window
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Redirecting to OAuth...</title>
-        </head>
-        <body>
-          <script>
-            // Break out of iframe and redirect TOP window to OAuth
-            if (window.top !== window.self) {
-              window.top.location.href = '${oauthUrl}';
-            } else {
-              window.location.href = '${oauthUrl}';
-            }
-          </script>
-        </body>
-        </html>
-      `);
-    }
-
-    // Not embedded (or embedded param not present) - proceed with OAuth normally
     const shopify = shopifyService.getShopifyApi();
 
     // Use Shopify's standard OAuth initiation
-    // This will redirect to accounts.shopify.com for OAuth approval
+    // This handles state parameter, HMAC validation, and proper redirects
     await shopify.auth.begin({
       shop: shop,
       callbackPath: '/api/shopify/auth/callback',
@@ -605,8 +560,9 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
       rawRequest: req,
       rawResponse: res,
     });
-    
-    console.log(`✅ OAuth initiation completed for shop: ${shop}`);
+
+    // shopify.auth.begin() handles the redirect automatically
+    // No need to manually construct OAuth URL or send HTML
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);

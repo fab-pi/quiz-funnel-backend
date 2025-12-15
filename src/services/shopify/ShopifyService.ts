@@ -20,7 +20,7 @@ export class ShopifyService extends BaseService {
     // Validate required environment variables
     const apiKey = process.env.SHOPIFY_API_KEY;
     const apiSecret = process.env.SHOPIFY_API_SECRET;
-    const appUrl = process.env.SHOPIFY_APP_URL;
+    const appUrl = process.env.SHOPIFY_APP_URL; // Frontend URL where embedded app is loaded
 
     if (!apiKey || !apiSecret || !appUrl) {
       throw new Error(
@@ -38,13 +38,14 @@ export class ShopifyService extends BaseService {
     const apiVersion = (process.env.SHOPIFY_API_VERSION as ApiVersion) || LATEST_API_VERSION;
 
     // CRITICAL: hostName is used by Shopify API to construct redirect_uri for OAuth callback
-    // The redirect_uri MUST point to the backend API, not the frontend app URL
+    // The redirect_uri MUST point to the backend API endpoint, not the frontend app URL
     // Example: redirect_uri = https://{hostName}/api/shopify/auth/callback
     // So hostName should be: api.try-directquiz.com (backend), not quiz.try-directquiz.com (frontend)
-    // Use BACKEND_API_URL or API_BASE_URL if available, otherwise extract from API_URL, fallback to appUrl
-    let backendUrl = process.env.BACKEND_API_URL || 
+    // 
+    // Use SHOPIFY_BACKEND_URL if available, otherwise try API_BASE_URL or API_URL, fallback to default
+    let backendUrl = process.env.SHOPIFY_BACKEND_URL || 
                      process.env.API_BASE_URL || 
-                     process.env.API_URL?.replace(/\/api\/?$/, '') || // Remove /api suffix if present
+                     (process.env.API_URL ? process.env.API_URL.replace(/\/api\/?$/, '') : null) || // Remove /api suffix if present
                      'https://api.try-directquiz.com';
     
     // Extract hostname from backend URL (remove protocol and trailing slashes)
