@@ -577,13 +577,18 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     
     // Redirect to Shopify OAuth page
     res.redirect(shopifyOAuthUrl);
+    return; // Ensure we return after redirect
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to initiate OAuth flow'
-    });
+    
+    // Only send error response if headers haven't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to initiate OAuth flow'
+      });
+    }
   }
 });
 
