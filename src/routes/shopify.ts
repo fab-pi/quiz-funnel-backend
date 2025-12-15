@@ -547,62 +547,14 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
       });
     }
 
-    const embedded = req.query.embedded as string;
-    const host = req.query.host as string;
-    
-    console.log(`🔄 Initiating OAuth for shop: ${shop} (embedded: ${embedded || 'no'}, host: ${host || 'no'})`);
+    console.log(`🔄 Initiating OAuth for shop: ${shop}`);
 
-    // Shopify's recommended approach for embedded apps:
-    // If embedded=1, we need to break out of iframe first using App Bridge Redirect
-    // Then redirect to the same URL without embedded=1 to initiate OAuth
-    if (embedded === '1') {
-      // This is an embedded app request - return HTML that breaks out of iframe
-      // The frontend will use App Bridge Redirect, but we also provide a fallback
-      const nonEmbeddedUrl = `${req.protocol}://${req.get('host')}${req.path}?shop=${encodeURIComponent(shop)}${host ? `&host=${encodeURIComponent(host)}` : ''}`;
-      
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Redirecting...</title>
-          <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-        </head>
-        <body>
-          <script>
-            // Try App Bridge Redirect first (Shopify's recommended method)
-            if (window.appBridge && window.appBridge.actions && window.appBridge.actions.Redirect) {
-              try {
-                const Redirect = window.appBridge.actions.Redirect;
-                const redirect = Redirect.create(window.appBridgeApp);
-                redirect.dispatch(Redirect.Action.REMOTE, '${nonEmbeddedUrl}');
-              } catch (e) {
-                console.warn('App Bridge Redirect failed, using fallback:', e);
-                // Fallback: break out of iframe manually
-                if (window.top !== window.self) {
-                  window.top.location.href = '${nonEmbeddedUrl}';
-                } else {
-                  window.location.href = '${nonEmbeddedUrl}';
-                }
-              }
-            } else {
-              // Fallback: break out of iframe manually
-              if (window.top !== window.self) {
-                window.top.location.href = '${nonEmbeddedUrl}';
-              } else {
-                window.location.href = '${nonEmbeddedUrl}';
-              }
-            }
-          </script>
-        </body>
-        </html>
-      `);
-    }
-
-    // Not embedded (or embedded param not present) - proceed with OAuth
     const shopify = shopifyService.getShopifyApi();
 
     // Use Shopify's standard OAuth initiation
-    // This handles state parameter, HMAC validation, and proper redirects
+    // With isEmbeddedApp: true in config, auth.begin() automatically handles
+    // embedded app requests by returning HTML that breaks out of iframe
+    // This ensures OAuth happens IMMEDIATELY before any UI interaction (Shopify requirement)
     await shopify.auth.begin({
       shop: shop,
       callbackPath: '/api/shopify/auth/callback',
@@ -611,7 +563,9 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
       rawResponse: res,
     });
     
-    console.log(`✅ OAuth initiation completed for shop: ${shop}`);
+    // shopify.auth.begin() handles the redirect automatically
+    // For embedded apps, it returns HTML that breaks out of iframe
+    // No need to manually check embedded parameter
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
