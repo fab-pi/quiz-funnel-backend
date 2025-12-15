@@ -552,6 +552,8 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     const shopify = shopifyService.getShopifyApi();
 
     // Use Shopify's standard OAuth initiation
+    // With isEmbeddedApp: true in config, auth.begin() automatically handles
+    // embedded app requests by returning HTML that breaks out of iframe
     // This handles state parameter, HMAC validation, and proper redirects
     await shopify.auth.begin({
       shop: shop,
@@ -562,6 +564,7 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     });
 
     // shopify.auth.begin() handles the redirect automatically
+    // For embedded apps, it returns HTML that breaks out of iframe
     // No need to manually construct OAuth URL or send HTML
 
   } catch (error: any) {
