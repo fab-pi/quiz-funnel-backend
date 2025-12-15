@@ -37,8 +37,18 @@ export class ShopifyService extends BaseService {
     // Get API version from environment or use latest
     const apiVersion = (process.env.SHOPIFY_API_VERSION as ApiVersion) || LATEST_API_VERSION;
 
-    // Extract hostname from app URL (remove protocol)
-    const hostName = appUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    // CRITICAL: hostName is used by Shopify API to construct redirect_uri for OAuth callback
+    // The redirect_uri MUST point to the backend API, not the frontend app URL
+    // Example: redirect_uri = https://{hostName}/api/shopify/auth/callback
+    // So hostName should be: api.try-directquiz.com (backend), not quiz.try-directquiz.com (frontend)
+    // Use BACKEND_API_URL or API_BASE_URL if available, otherwise extract from API_URL, fallback to appUrl
+    let backendUrl = process.env.BACKEND_API_URL || 
+                     process.env.API_BASE_URL || 
+                     process.env.API_URL?.replace(/\/api\/?$/, '') || // Remove /api suffix if present
+                     'https://api.try-directquiz.com';
+    
+    // Extract hostname from backend URL (remove protocol and trailing slashes)
+    const hostName = backendUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
     // Initialize custom session storage and store as class property
     this.sessionStorage = new ShopifySessionStorage(this.pool);
@@ -57,7 +67,8 @@ export class ShopifyService extends BaseService {
     console.log('✅ Shopify API client initialized');
     console.log(`   API Version: ${apiVersion}`);
     console.log(`   Scopes: ${scopes.join(', ')}`);
-    console.log(`   Host: ${hostName}`);
+    console.log(`   Host (for OAuth redirect_uri): ${hostName}`);
+    console.log(`   App URL (frontend): ${appUrl}`);
     console.log(`   Session Storage: Enabled`);
   }
 
