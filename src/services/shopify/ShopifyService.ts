@@ -92,16 +92,7 @@ export class ShopifyService extends BaseService {
     const client = await this.pool.connect();
 
     try {
-      // Fetch primary domain from Shopify API
-      let primaryDomain: string | null = null;
-      try {
-        primaryDomain = await this.getShopPrimaryDomain(session.shop);
-      } catch (error: any) {
-        // Log but don't fail - primary domain is optional
-        console.warn(`⚠️ Failed to fetch primary domain for ${session.shop}:`, error.message);
-      }
-
-      // Check if shop already exists
+      // Check if shop already exists FIRST (before fetching primary domain)
       const existingShop = await client.query<ShopDatabaseRow>(
         'SELECT * FROM shops WHERE shop_domain = $1',
         [session.shop]
@@ -111,33 +102,34 @@ export class ShopifyService extends BaseService {
 
       if (existingShop.rows.length > 0) {
         // Update existing shop (reinstall scenario)
+        // Don't fetch primary domain here - it will be refreshed later if needed
         const result = await client.query<ShopDatabaseRow>(
           `UPDATE shops 
            SET access_token = $1, 
                scope = $2, 
-               primary_domain = $3,
                installed_at = CURRENT_TIMESTAMP,
                uninstalled_at = NULL,
                updated_at = CURRENT_TIMESTAMP
-           WHERE shop_domain = $4
+           WHERE shop_domain = $3
            RETURNING *`,
-          [session.accessToken, session.scope || null, primaryDomain, session.shop]
+          [session.accessToken, session.scope || null, session.shop]
         );
 
         shopRecord = result.rows[0];
-        console.log(`✅ Shop updated from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
+        console.log(`✅ Shop updated from session: ${session.shop}`);
       } else {
         // Insert new shop
         // Initialize session columns as NULL - they will be set by session storage
+        // Don't fetch primary domain here - it will be refreshed later if needed
         const result = await client.query<ShopDatabaseRow>(
-          `INSERT INTO shops (shop_domain, access_token, scope, primary_domain, installed_at)
-           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+          `INSERT INTO shops (shop_domain, access_token, scope, installed_at)
+           VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
            RETURNING *`,
-          [session.shop, session.accessToken, session.scope || null, primaryDomain]
+          [session.shop, session.accessToken, session.scope || null]
         );
 
         shopRecord = result.rows[0];
-        console.log(`✅ Shop stored from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
+        console.log(`✅ Shop stored from session: ${session.shop}`);
       }
 
       // NOW store session in session storage (shop must exist first)
@@ -146,7 +138,58 @@ export class ShopifyService extends BaseService {
         throw new Error(`Failed to store session for shop: ${session.shop}`);
       }
 
-      return this.mapShopFromDatabase(shopRecord);
+      // Fetch primary domain AFTER shop and session are stored (optional, non-blocking)
+      // This allows the OAuth flow to complete even if primary domain fetch fails
+      // Use the session we just created instead of looking it up again
+      try {
+        const graphqlClient = new this.shopify.clients.Graphql({ session });
+        const query = `
+          query getShopPrimaryDomain {
+            shop {
+              primaryDomain {
+                host
+              }
+            }
+          }
+        `;
+
+        const response = await graphqlClient.query({
+          data: {
+            query: query,
+          },
+        }) as {
+          body: {
+            data: {
+              shop: {
+                primaryDomain: {
+                  host: string;
+                } | null;
+              };
+            };
+          };
+        };
+
+        const primaryDomain = response.body?.data?.shop?.primaryDomain?.host || null;
+        
+        if (primaryDomain) {
+          await client.query(
+            'UPDATE shops SET primary_domain = $1, updated_at = CURRENT_TIMESTAMP WHERE shop_domain = $2',
+            [primaryDomain, session.shop]
+          );
+          console.log(`✅ Primary domain updated for ${session.shop}: ${primaryDomain}`);
+        }
+      } catch (error: any) {
+        // Log but don't fail - primary domain is optional and can be refreshed later
+        console.warn(`⚠️ Failed to fetch primary domain for ${session.shop}:`, error.message);
+      }
+
+      // Reload shop record to get updated primary_domain if it was fetched
+      const finalShop = await client.query<ShopDatabaseRow>(
+        'SELECT * FROM shops WHERE shop_domain = $1',
+        [session.shop]
+      );
+
+      return this.mapShopFromDatabase(finalShop.rows[0]);
     } catch (error: any) {
       console.error('❌ Error storing shop from session:', error);
       throw error;
