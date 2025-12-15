@@ -83,15 +83,12 @@ export class ShopifyService extends BaseService {
 
   /**
    * Store shop information from a Shopify Session object (new standard method)
-   * This method stores the session in session storage and updates the shop record
+   * This method creates/updates the shop record FIRST, then stores the session in session storage
+   * 
+   * IMPORTANT: Order matters! We must create/update the shop BEFORE storing the session,
+   * because session storage requires the shop to exist in the database.
    */
   async storeShopFromSession(session: Session): Promise<Shop> {
-    // Store session in session storage first
-    const stored = await this.sessionStorage.storeSession(session);
-    if (!stored) {
-      throw new Error(`Failed to store session for shop: ${session.shop}`);
-    }
-
     const client = await this.pool.connect();
 
     try {
@@ -110,9 +107,10 @@ export class ShopifyService extends BaseService {
         [session.shop]
       );
 
+      let shopRecord: ShopDatabaseRow;
+
       if (existingShop.rows.length > 0) {
         // Update existing shop (reinstall scenario)
-        // Note: session storage already updated session columns, but we also update access_token for backward compatibility
         const result = await client.query<ShopDatabaseRow>(
           `UPDATE shops 
            SET access_token = $1, 
@@ -126,11 +124,11 @@ export class ShopifyService extends BaseService {
           [session.accessToken, session.scope || null, primaryDomain, session.shop]
         );
 
+        shopRecord = result.rows[0];
         console.log(`✅ Shop updated from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
-        return this.mapShopFromDatabase(result.rows[0]);
       } else {
         // Insert new shop
-        // Note: session storage already stored session columns, but we also insert access_token for backward compatibility
+        // Initialize session columns as NULL - they will be set by session storage
         const result = await client.query<ShopDatabaseRow>(
           `INSERT INTO shops (shop_domain, access_token, scope, primary_domain, installed_at)
            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
@@ -138,9 +136,17 @@ export class ShopifyService extends BaseService {
           [session.shop, session.accessToken, session.scope || null, primaryDomain]
         );
 
+        shopRecord = result.rows[0];
         console.log(`✅ Shop stored from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
-        return this.mapShopFromDatabase(result.rows[0]);
       }
+
+      // NOW store session in session storage (shop must exist first)
+      const stored = await this.sessionStorage.storeSession(session);
+      if (!stored) {
+        throw new Error(`Failed to store session for shop: ${session.shop}`);
+      }
+
+      return this.mapShopFromDatabase(shopRecord);
     } catch (error: any) {
       console.error('❌ Error storing shop from session:', error);
       throw error;

@@ -699,6 +699,43 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
 
     const appUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
     
+    // For embedded apps, if host parameter is provided, redirect to Shopify admin embedded app URL
+    // This ensures the app loads correctly in the Shopify admin iframe
+    // The host parameter is base64-encoded and contains the Shopify admin URL (e.g., "admin.shopify.com/store/quiz-app-2")
+    if (host) {
+      try {
+        // Decode host parameter (base64-encoded Shopify admin URL)
+        const decodedHost = Buffer.from(host, 'base64').toString('utf-8');
+        console.log(`🔍 Decoded host parameter: ${decodedHost}`);
+        
+        // Construct Shopify admin embedded app URL
+        // Format: https://{decodedHost}/apps/{app-handle}/{path}?shop={shop}&host={host}
+        // App handle is the app identifier from Partner Dashboard (e.g., "direct-quiz-11")
+        // Can be configured via SHOPIFY_APP_HANDLE env var, or extracted from App URL in Partner Dashboard
+        const appHandle = process.env.SHOPIFY_APP_HANDLE || 'direct-quiz';
+        console.log(`🔍 Using app handle: ${appHandle} (configure SHOPIFY_APP_HANDLE if different)`);
+        
+        if (!activeSubscription || (activeSubscription.status !== 'ACTIVE' && activeSubscription.status !== 'TRIAL')) {
+          // No active subscription, redirect to plan selection in embedded app
+          const embeddedUrl = `https://${decodedHost}/apps/${appHandle}/shopify/plans?shop=${encodeURIComponent(session.shop)}&host=${encodeURIComponent(host)}`;
+          console.log(`ℹ️ No active subscription, redirecting to embedded plan selection: ${embeddedUrl}`);
+          res.redirect(embeddedUrl);
+          return;
+        }
+
+        // Has active subscription, redirect to dashboard in embedded app
+        const embeddedUrl = `https://${decodedHost}/apps/${appHandle}/shopify?shop=${encodeURIComponent(session.shop)}&host=${encodeURIComponent(host)}`;
+        console.log(`✅ Redirecting to embedded app: ${embeddedUrl}`);
+        res.redirect(embeddedUrl);
+        return;
+      } catch (error: any) {
+        console.warn(`⚠️ Failed to decode host parameter, falling back to direct redirect: ${error.message}`);
+        console.warn(`   Host value: ${host}`);
+        // Fall through to direct redirect
+      }
+    }
+    
+    // Fallback: direct redirect to app URL (for non-embedded or if host decoding fails)
     if (!activeSubscription || (activeSubscription.status !== 'ACTIVE' && activeSubscription.status !== 'TRIAL')) {
       // No active subscription, redirect to plan selection
       console.log(`ℹ️ No active subscription found for shop ${session.shop}, redirecting to plan selection`);
