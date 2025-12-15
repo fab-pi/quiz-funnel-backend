@@ -557,12 +557,19 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
     // So we need to redirect the TOP window, not the iframe
     if (embedded === '1') {
       // Build OAuth URL without embedded parameter (will load in top window)
+      // IMPORTANT: req.path is '/shopify/auth' but routes are mounted under '/api'
+      // So we need to add '/api' prefix to the path
       const oauthParams = new URLSearchParams();
       oauthParams.set('shop', shop);
       if (host) oauthParams.set('host', host);
       // Don't include embedded=1 - OAuth will happen in top window
       
-      const oauthUrl = `${req.protocol}://${req.get('host')}${req.path}?${oauthParams.toString()}`;
+      // req.path is '/shopify/auth', but routes are mounted under '/api'
+      // So the full path should be '/api/shopify/auth'
+      const fullPath = `/api${req.path}`;
+      const oauthUrl = `${req.protocol}://${req.get('host')}${fullPath}?${oauthParams.toString()}`;
+      
+      console.log(`🔍 Building OAuth URL for embedded app: ${oauthUrl}`);
       
       // Return HTML that breaks out of iframe and redirects to OAuth
       // This HTML will be executed in the iframe, but redirects the TOP window
