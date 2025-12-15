@@ -47,16 +47,13 @@ export class ShopifyBillingService extends BaseService {
       const returnUrl = `${appUrl}/shopify/billing/confirm`;
 
       // GraphQL mutation for creating subscription
-      // Note: cappedAmount is optional - set a high limit to prevent unexpected charges
-      // Since we're blocking access rather than charging overages, we set a high cap
       const mutation = `
-        mutation appSubscriptionCreate($name: String!, $trialDays: Int!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $cappedAmount: MoneyInput!, $test: Boolean!) {
+        mutation appSubscriptionCreate($name: String!, $trialDays: Int!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $test: Boolean!) {
           appSubscriptionCreate(
             name: $name
             trialDays: $trialDays
             returnUrl: $returnUrl
             lineItems: $lineItems
-            cappedAmount: $cappedAmount
             test: $test
           ) {
             appSubscription {
@@ -74,19 +71,11 @@ export class ShopifyBillingService extends BaseService {
         }
       `;
 
-      // Set cappedAmount to 2x the plan price as a safety limit
-      // This prevents unexpected charges while allowing room for potential future usage-based features
-      const cappedAmount = plan.price * 2;
-
       const variables = {
         name: `${plan.name} Plan`,
         trialDays: plan.trialDays,
         returnUrl: returnUrl,
         test: process.env.NODE_ENV !== 'production',
-        cappedAmount: {
-          amount: cappedAmount,
-          currencyCode: 'EUR',
-        },
         lineItems: [
           {
             plan: {
