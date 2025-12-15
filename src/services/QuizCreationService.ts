@@ -218,7 +218,7 @@ export class QuizCreationService extends BaseService {
           
           // Get shop information
           const shopResult = await client.query(
-            'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+            'SELECT shop_domain FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
             [shopId]
           );
 
@@ -226,14 +226,13 @@ export class QuizCreationService extends BaseService {
             console.warn(`⚠️ Shop ${shopId} not found or uninstalled, skipping Shopify page creation`);
           } else {
             const shopDomain = shopResult.rows[0].shop_domain;
-            const accessToken = shopResult.rows[0].access_token;
 
             // Step 1: Create Shopify page first (to get pageId)
             console.log(`   Step 1: Creating Shopify page...`);
             const pageTitle = data.quiz_name;
             const pageHandle = `quiz-${quizId}`;
             
-            const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
+            const pageResult = await this.shopifyPagesService.createPage(shopDomain, {
               title: pageTitle,
               body: '', // Empty body, template will handle rendering
               handle: pageHandle,
@@ -246,7 +245,7 @@ export class QuizCreationService extends BaseService {
 
             // Step 2: Get active theme GID
             console.log(`   Step 2: Getting active theme...`);
-            const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
+            const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain);
             
             if (!themeGid) {
               throw new Error('Active theme not found');
@@ -269,7 +268,6 @@ export class QuizCreationService extends BaseService {
             
             await this.shopifyThemeAssetsService.upsertTemplateFile(
               shopDomain,
-              accessToken,
               themeGid,
               templatePath,
               templateContent
@@ -278,7 +276,7 @@ export class QuizCreationService extends BaseService {
 
             // Step 5: Update page with templateSuffix to link it to the template
             console.log(`   Step 5: Linking page to template...`);
-            await this.shopifyPagesService.updatePage(shopDomain, accessToken, shopifyPageId, {
+            await this.shopifyPagesService.updatePage(shopDomain, shopifyPageId, {
               templateSuffix: templateSuffix,
             });
             console.log(`   ✅ Page linked to template: ${templateSuffix}`);
@@ -961,7 +959,7 @@ export class QuizCreationService extends BaseService {
             
             // Get shop information
             const shopResult = await client.query(
-              'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+              'SELECT shop_domain FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
               [shopId]
             );
 
@@ -969,11 +967,10 @@ export class QuizCreationService extends BaseService {
               console.warn(`⚠️ Shop ${shopId} not found or uninstalled, skipping Shopify page update`);
             } else {
               const shopDomain = shopResult.rows[0].shop_domain;
-              const accessToken = shopResult.rows[0].access_token;
 
               // Step 1: Get active theme GID
               console.log(`   Step 1: Getting active theme...`);
-              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
+              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain);
               
               if (!themeGid) {
                 throw new Error('Active theme not found');
@@ -995,7 +992,6 @@ export class QuizCreationService extends BaseService {
               
               await this.shopifyThemeAssetsService.upsertTemplateFile(
                 shopDomain,
-                accessToken,
                 themeGid,
                 templatePath,
                 templateContent
@@ -1006,7 +1002,7 @@ export class QuizCreationService extends BaseService {
               console.log(`   Step 4: Updating Shopify page...`);
               const templateSuffix = `quiz-app-iframe-${existingPageId}`;
               
-              await this.shopifyPagesService.updatePage(shopDomain, accessToken, existingPageId, {
+              await this.shopifyPagesService.updatePage(shopDomain, existingPageId, {
                 title: data.quiz_name, // Update title if quiz name changed
                 templateSuffix: templateSuffix, // Ensure templateSuffix is set
                 // Keep existing handle
@@ -1036,17 +1032,16 @@ export class QuizCreationService extends BaseService {
             console.log(`🔄 Creating new Shopify page for quiz ${quizId}...`);
             
             const shopResult = await client.query(
-              'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+              'SELECT shop_domain FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
               [shopId]
             );
 
             if (shopResult.rows.length > 0) {
               const shopDomain = shopResult.rows[0].shop_domain;
-              const accessToken = shopResult.rows[0].access_token;
 
               // Step 1: Create Shopify page first
               const pageHandle = `quiz-${quizId}`;
-              const pageResult = await this.shopifyPagesService.createPage(shopDomain, accessToken, {
+              const pageResult = await this.shopifyPagesService.createPage(shopDomain, {
                 title: data.quiz_name,
                 body: '', // Empty body, template will handle rendering
                 handle: pageHandle,
@@ -1056,7 +1051,7 @@ export class QuizCreationService extends BaseService {
               console.log(`   ✅ Shopify page created with ID: ${newPageId}`);
 
               // Step 2: Get active theme GID
-              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
+              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain);
               
               if (!themeGid) {
                 throw new Error('Active theme not found');
@@ -1075,14 +1070,13 @@ export class QuizCreationService extends BaseService {
               
               await this.shopifyThemeAssetsService.upsertTemplateFile(
                 shopDomain,
-                accessToken,
                 themeGid,
                 templatePath,
                 templateContent
               );
 
               // Step 5: Update page with templateSuffix
-              await this.shopifyPagesService.updatePage(shopDomain, accessToken, newPageId, {
+              await this.shopifyPagesService.updatePage(shopDomain, newPageId, {
                 templateSuffix: templateSuffix,
               });
 
@@ -1206,21 +1200,20 @@ export class QuizCreationService extends BaseService {
           
           // Get shop information
           const shopResult = await client.query(
-            'SELECT shop_domain, access_token FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
+            'SELECT shop_domain FROM shops WHERE shop_id = $1 AND uninstalled_at IS NULL',
             [quiz.shop_id]
           );
 
           if (shopResult.rows.length > 0) {
             const shopDomain = shopResult.rows[0].shop_domain;
-            const accessToken = shopResult.rows[0].access_token;
 
             // Step 1: Delete Shopify page
-            await this.shopifyPagesService.deletePage(shopDomain, accessToken, quiz.shopify_page_id);
+            await this.shopifyPagesService.deletePage(shopDomain, quiz.shopify_page_id);
             console.log(`✅ Shopify page ${quiz.shopify_page_id} deleted for quiz ${quizId}`);
 
             // Step 2: Get active theme GID
             try {
-              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain, accessToken);
+              const themeGid = await this.shopifyThemesService.getActiveThemeGid(shopDomain);
               
               if (themeGid) {
                 // Step 3: Delete template file
@@ -1229,7 +1222,6 @@ export class QuizCreationService extends BaseService {
                 
                 await this.shopifyThemeAssetsService.deleteTemplateFile(
                   shopDomain,
-                  accessToken,
                   themeGid,
                   templatePath
                 );

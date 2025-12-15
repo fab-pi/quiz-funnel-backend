@@ -17,13 +17,11 @@ export class ShopifyPagesService extends BaseService {
   /**
    * Create a new Shopify page
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @param pageData - Page data (title, body, handle, templateSuffix)
    * @returns Created page ID and handle
    */
   async createPage(
     shopDomain: string,
-    accessToken: string,
     pageData: {
       title: string;
       body: string;
@@ -32,7 +30,7 @@ export class ShopifyPagesService extends BaseService {
     }
   ): Promise<{ pageId: number; handle: string }> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Generate handle from title if not provided
       const handle = pageData.handle || this.generateHandleFromTitle(pageData.title);
@@ -68,23 +66,25 @@ export class ShopifyPagesService extends BaseService {
       }
 
       // GraphqlParams expects data as string or object with query/variables
-      const response = await client.query<{
-        data: {
-          pageCreate: {
-            page: {
-              id: string;
-              handle: string;
-              title: string;
-            };
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            pageCreate: {
+              page: {
+                id: string;
+                handle: string;
+                title: string;
+              };
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify pageCreate mutation');
@@ -135,7 +135,6 @@ export class ShopifyPagesService extends BaseService {
    */
   async updatePage(
     shopDomain: string,
-    accessToken: string,
     pageId: number,
     pageData: {
       title?: string;
@@ -145,7 +144,7 @@ export class ShopifyPagesService extends BaseService {
     }
   ): Promise<{ pageId: number; handle: string }> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Convert numeric ID to Shopify GID
       // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
@@ -188,23 +187,25 @@ export class ShopifyPagesService extends BaseService {
       }
 
       // GraphqlParams expects data as string or object with query/variables
-      const response = await client.query<{
-        data: {
-          pageUpdate: {
-            page: {
-              id: string;
-              handle: string;
-              title: string;
-            };
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            pageUpdate: {
+              page: {
+                id: string;
+                handle: string;
+                title: string;
+              };
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify pageUpdate mutation');
@@ -246,12 +247,11 @@ export class ShopifyPagesService extends BaseService {
   /**
    * Delete a Shopify page
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @param pageId - Shopify page ID
    */
-  async deletePage(shopDomain: string, accessToken: string, pageId: number): Promise<void> {
+  async deletePage(shopDomain: string, pageId: number): Promise<void> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Convert numeric ID to Shopify GID
       // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
@@ -274,18 +274,20 @@ export class ShopifyPagesService extends BaseService {
       };
 
       // GraphqlParams expects data as string or object with query/variables
-      const response = await client.query<{
-        data: {
-          pageDelete: {
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            pageDelete: {
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify pageDelete mutation');
@@ -312,17 +314,15 @@ export class ShopifyPagesService extends BaseService {
   /**
    * Get a Shopify page by ID
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @param pageId - Shopify page ID
    * @returns Page data or null if not found
    */
   async getPage(
     shopDomain: string,
-    accessToken: string,
     pageId: number
   ): Promise<{ pageId: number; handle: string; title: string } | null> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Convert numeric ID to Shopify GID
       // Note: Shopify uses Page as the resource type for pages (gid://shopify/Page/{id})
@@ -344,20 +344,22 @@ export class ShopifyPagesService extends BaseService {
       };
 
       // GraphqlParams expects data as string or object with query/variables
-      const response = await client.query<{
-        data: {
-          page: {
-            id: string;
-            handle: string;
-            title: string;
-          } | null;
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: query,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            page: {
+              id: string;
+              handle: string;
+              title: string;
+            } | null;
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify page query');

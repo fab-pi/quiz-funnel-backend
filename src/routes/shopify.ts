@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
 import { ShopifyBillingService } from '../services/shopify/ShopifyBillingService';
 import { QuizContentService } from '../services/QuizContentService';
@@ -551,56 +551,18 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
 
     const shopify = shopifyService.getShopifyApi();
 
-    // Get callback URL from environment or construct it
-    const callbackUrl = process.env.SHOPIFY_CALLBACK_URL || 'https://api.try-directquiz.com/api/shopify/auth/callback';
-    console.log(`   📍 Using callback URL: ${callbackUrl}`);
+    // Use Shopify's standard OAuth initiation
+    // This handles state parameter, HMAC validation, and proper redirects
+    await shopify.auth.begin({
+      shop: shop,
+      callbackPath: '/api/shopify/auth/callback',
+      isOnline: false, // Offline token (app-level, doesn't expire)
+      rawRequest: req,
+      rawResponse: res,
+    });
 
-    // Get API key and secret for manual OAuth URL construction
-    const apiKey = process.env.SHOPIFY_API_KEY;
-    const scopes = process.env.SHOPIFY_SCOPES?.split(',').map(s => s.trim()).join(',') || 'read_products,write_products';
-    
-    if (!apiKey) {
-      return res.status(500).json({
-        success: false,
-        message: 'SHOPIFY_API_KEY is not configured'
-      });
-    }
-
-    // Manually construct OAuth URL with correct redirect_uri
-    // This ensures we use the backend domain (api.try-directquiz.com) instead of frontend domain
-    const shopifyOAuthUrl = `https://${shop}/admin/oauth/authorize?` +
-      `client_id=${apiKey}&` +
-      `scope=${encodeURIComponent(scopes)}&` +
-      `redirect_uri=${encodeURIComponent(callbackUrl)}`;
-
-    console.log(`   🔗 Redirecting to Shopify OAuth: ${shopifyOAuthUrl.replace(/client_id=[^&]+/, 'client_id=***')}`);
-    
-    // Return HTML page that breaks out of iframe for OAuth
-    // Shopify's OAuth page blocks iframe embedding, so we need to redirect the top-level window
-    res.setHeader('Content-Type', 'text/html');
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Redirecting to Shopify...</title>
-        </head>
-        <body>
-          <script>
-            // Break out of iframe if we're embedded
-            if (window.top !== window.self) {
-              window.top.location.href = ${JSON.stringify(shopifyOAuthUrl)};
-            } else {
-              window.location.href = ${JSON.stringify(shopifyOAuthUrl)};
-            }
-          </script>
-          <noscript>
-            <meta http-equiv="refresh" content="0;url=${shopifyOAuthUrl.replace(/"/g, '&quot;')}">
-            <p>Redirecting to Shopify... <a href="${shopifyOAuthUrl.replace(/"/g, '&quot;')}">Click here</a> if you are not redirected.</p>
-          </noscript>
-        </body>
-      </html>
-    `);
-    return;
+    // shopify.auth.begin() handles the redirect automatically
+    // No need to manually construct OAuth URL or send HTML
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
@@ -624,64 +586,33 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
  */
 router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
   try {
-    const code = req.query.code as string;
-    const shop = req.query.shop as string;
     const host = req.query.host as string;
 
-    if (!code || !shop) {
-      throw new Error('Missing code or shop parameter in OAuth callback');
-    }
-
     console.log('🔄 Processing OAuth callback...');
-    console.log(`   Shop: ${shop}`);
     console.log(`   Host: ${host || 'not provided'}`);
 
-    // Manually exchange authorization code for access token
-    const apiKey = process.env.SHOPIFY_API_KEY;
-    const apiSecret = process.env.SHOPIFY_API_SECRET;
-    const callbackUrl = process.env.SHOPIFY_CALLBACK_URL || 'https://api.try-directquiz.com/api/shopify/auth/callback';
+    const shopify = shopifyService.getShopifyApi();
 
-    if (!apiKey || !apiSecret) {
-      throw new Error('SHOPIFY_API_KEY or SHOPIFY_API_SECRET is not configured');
-    }
-
-    // Exchange code for access token using Shopify REST API
-    const tokenUrl = `https://${shop}/admin/oauth/access_token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        client_id: apiKey,
-        client_secret: apiSecret,
-        code: code,
-      }),
+    // Use Shopify's standard OAuth callback
+    // This handles HMAC validation, state parameter validation, and token exchange
+    const callbackResponse = await shopify.auth.callback({
+      rawRequest: req,
+      rawResponse: res,
     });
 
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
+    // Extract session from callback response
+    const session = callbackResponse.session;
+
+    if (!session || !session.accessToken) {
+      throw new Error('Failed to obtain session from OAuth callback');
     }
 
-    const tokenData = await tokenResponse.json() as { access_token: string; scope?: string };
-    const accessToken = tokenData.access_token;
-    const scope = tokenData.scope || '';
+    console.log(`✅ OAuth callback successful for shop: ${session.shop}`);
+    console.log(`   Session ID: ${session.id}`);
+    console.log(`   Scope: ${session.scope || 'not provided'}`);
 
-    if (!accessToken) {
-      throw new Error('Failed to obtain access token from Shopify');
-    }
-
-    console.log(`✅ OAuth successful for shop: ${shop}`);
-    console.log(`   Access token obtained, scope: ${scope}`);
-
-    // Store shop in database
-    const storedShop = await shopifyService.storeShop({
-      shopDomain: shop,
-      accessToken: accessToken,
-      scope: scope,
-    });
+    // Store session using new storeShopFromSession method
+    const storedShop = await shopifyService.storeShopFromSession(session);
 
     /**
      * Register billing webhook: APP_SUBSCRIPTIONS_UPDATE
@@ -690,9 +621,9 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
      * If this fails, we log a warning but do NOT block the OAuth flow.
      */
     try {
-      console.log(`🔄 Ensuring APP_SUBSCRIPTIONS_UPDATE webhook is registered for shop ${shop}...`);
+      console.log(`🔄 Ensuring APP_SUBSCRIPTIONS_UPDATE webhook is registered for shop ${session.shop}...`);
 
-      const graphqlClient = await shopifyService.createGraphQLClient(shop, accessToken);
+      const graphqlClient = await shopifyService.createGraphQLClient(session.shop);
 
       const webhookMutation = `
         mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
@@ -726,18 +657,7 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
         },
       };
 
-      const webhookResponse = await graphqlClient.query<{
-        data: {
-          webhookSubscriptionCreate: {
-            webhookSubscription: {
-              id: string;
-              callbackUrl: string;
-              topic: string;
-            } | null;
-            userErrors: Array<{ field: string[] | null; message: string }>;
-          };
-        };
-      }>({
+      const webhookResponse = await graphqlClient.query({
         data: {
           query: webhookMutation,
           variables: webhookVariables,
@@ -751,7 +671,7 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
 
         if (result.userErrors && result.userErrors.length > 0) {
           // Common benign case: webhook already exists -> user error about duplicate subscription
-          const messages = result.userErrors.map((e) => e.message).join(', ');
+          const messages = result.userErrors.map((e: { field: string[] | null; message: string }) => e.message).join(', ');
           console.warn(`⚠️ APP_SUBSCRIPTIONS_UPDATE webhook registration returned userErrors: ${messages}`);
         } else if (result.webhookSubscription) {
           console.log('✅ APP_SUBSCRIPTIONS_UPDATE webhook registered:', result.webhookSubscription);
@@ -762,9 +682,16 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
     } catch (webhookError: any) {
       // Do not fail OAuth flow if webhook registration fails; just log for later investigation
       console.warn(
-        `⚠️ Failed to register APP_SUBSCRIPTIONS_UPDATE webhook for shop ${shop}:`,
+        `⚠️ Failed to register APP_SUBSCRIPTIONS_UPDATE webhook for shop ${session.shop}:`,
         webhookError?.message || webhookError
       );
+    }
+
+    // Set any headers from callback response (if needed)
+    if (callbackResponse.headers) {
+      Object.entries(callbackResponse.headers).forEach(([key, value]) => {
+        res.setHeader(key, value as string | number | readonly string[]);
+      });
     }
 
     // Check if shop has an active subscription
@@ -774,14 +701,14 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
     
     if (!activeSubscription || (activeSubscription.status !== 'ACTIVE' && activeSubscription.status !== 'TRIAL')) {
       // No active subscription, redirect to plan selection
-      console.log(`ℹ️ No active subscription found for shop ${shop}, redirecting to plan selection`);
-      const redirectUrl = `${appUrl}/shopify/plans?shop=${shop}${host ? `&host=${host}` : ''}`;
+      console.log(`ℹ️ No active subscription found for shop ${session.shop}, redirecting to plan selection`);
+      const redirectUrl = `${appUrl}/shopify/plans?shop=${session.shop}${host ? `&host=${host}` : ''}`;
       res.redirect(redirectUrl);
       return;
     }
 
     // Has active subscription, redirect to dashboard
-    const redirectUrl = `${appUrl}/shopify?shop=${shop}${host ? `&host=${host}` : ''}`;
+    const redirectUrl = `${appUrl}/shopify?shop=${session.shop}${host ? `&host=${host}` : ''}`;
     console.log(`✅ Redirecting to app: ${redirectUrl}`);
     res.redirect(redirectUrl);
 
@@ -989,7 +916,6 @@ router.post('/shopify/subscription/create', shopifyAuthenticate, async (req: Sho
     // Create subscription
     const result = await shopifyBillingService.createSubscription(
       shopDomain,
-      shop.accessToken,
       planId
     );
 
@@ -1047,7 +973,6 @@ router.post('/shopify/subscription/cancel', shopifyAuthenticate, async (req: Sho
     // Cancel subscription
     await shopifyBillingService.cancelSubscription(
       shopDomain,
-      shop.accessToken,
       subscription.subscriptionGid
     );
 
@@ -1068,9 +993,13 @@ router.post('/shopify/subscription/cancel', shopifyAuthenticate, async (req: Sho
  * POST /api/shopify/webhooks/app_subscriptions/update
  * Handles subscription update webhook from Shopify
  * Updates subscription status when merchant approves, cancels, or trial ends
+ * 
+ * IMPORTANT: This route must use express.raw() middleware to preserve raw body for HMAC validation
+ * The raw body is required for webhook signature verification
  */
-router.post('/shopify/webhooks/app_subscriptions/update', async (req: Request, res: Response) => {
+router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   try {
+    const shopify = shopifyService.getShopifyApi();
     const shop = req.headers['x-shopify-shop-domain'] as string;
     
     if (!shop) {
@@ -1081,9 +1010,27 @@ router.post('/shopify/webhooks/app_subscriptions/update', async (req: Request, r
       });
     }
 
+    // Validate webhook HMAC signature
+    const isValid = await shopify.webhooks.validate({
+      rawBody: req.body, // Raw body buffer from express.raw()
+      rawRequest: req,
+      rawResponse: res,
+    });
+
+    if (!isValid) {
+      console.error('❌ Invalid webhook signature');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid webhook signature'
+      });
+    }
+
+    // Parse JSON body after validation
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+
     console.log(`🔄 Processing subscription update webhook for shop: ${shop}`);
 
-    const appSubscription = req.body.app_subscription;
+    const appSubscription = payload.app_subscription;
     if (!appSubscription || !appSubscription.id) {
       return res.status(400).json({
         success: false,
@@ -1159,11 +1106,32 @@ router.post('/shopify/webhooks/app_subscriptions/update', async (req: Request, r
  * POST /api/shopify/webhooks/app/uninstalled
  * Handles app uninstall webhook from Shopify
  * Marks shop as uninstalled in database
+ * 
+ * IMPORTANT: This route must use express.raw() middleware to preserve raw body for HMAC validation
+ * The raw body is required for webhook signature verification
  */
-router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Response) => {
+router.post('/shopify/webhooks/app/uninstalled', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   try {
     const shopify = shopifyService.getShopifyApi();
-    const shop = req.get('X-Shopify-Shop-Domain') || req.body?.shop?.myshopifyDomain;
+    
+    // Validate webhook HMAC signature first
+    const isValid = await shopify.webhooks.validate({
+      rawBody: req.body, // Raw body buffer from express.raw()
+      rawRequest: req,
+      rawResponse: res,
+    });
+
+    if (!isValid) {
+      console.error('❌ Invalid webhook signature');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid webhook signature'
+      });
+    }
+
+    // Parse JSON body after validation
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const shop = req.get('X-Shopify-Shop-Domain') || payload?.shop?.myshopifyDomain;
 
     if (!shop) {
       console.error('❌ Webhook missing shop domain');
@@ -1174,10 +1142,6 @@ router.post('/shopify/webhooks/app/uninstalled', async (req: Request, res: Respo
     }
 
     console.log(`🔄 Processing uninstall webhook for shop: ${shop}`);
-
-    // Verify webhook (Shopify API handles this automatically in callback)
-    // For now, we'll trust the webhook if it comes from Shopify
-    // In production, you should verify the webhook signature
 
     // Mark shop as uninstalled
     await shopifyService.uninstallShop(shop);

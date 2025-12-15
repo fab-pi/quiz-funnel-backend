@@ -1,9 +1,10 @@
 import { Pool } from 'pg';
-import { shopifyApi, LATEST_API_VERSION, ApiVersion } from '@shopify/shopify-api';
+import { shopifyApi, LATEST_API_VERSION, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import crypto from 'crypto';
 import { BaseService } from '../BaseService';
 import { Shop, ShopDatabaseRow, StoreShopRequest } from '../../types/shopify';
+import { ShopifySessionStorage } from './ShopifySessionStorage';
 
 /**
  * Shopify Service
@@ -11,6 +12,7 @@ import { Shop, ShopDatabaseRow, StoreShopRequest } from '../../types/shopify';
  */
 export class ShopifyService extends BaseService {
   private shopify;
+  private sessionStorage: ShopifySessionStorage;
 
   constructor(pool: Pool) {
     super(pool);
@@ -38,7 +40,10 @@ export class ShopifyService extends BaseService {
     // Extract hostname from app URL (remove protocol)
     const hostName = appUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    // Initialize Shopify API client
+    // Initialize custom session storage and store as class property
+    this.sessionStorage = new ShopifySessionStorage(this.pool);
+
+    // Initialize Shopify API client with session storage
     this.shopify = shopifyApi({
       apiKey,
       apiSecretKey: apiSecret,
@@ -46,16 +51,95 @@ export class ShopifyService extends BaseService {
       hostName,
       apiVersion,
       isEmbeddedApp: true,
+      sessionStorage: this.sessionStorage, // Add session storage
     });
 
     console.log('✅ Shopify API client initialized');
     console.log(`   API Version: ${apiVersion}`);
     console.log(`   Scopes: ${scopes.join(', ')}`);
     console.log(`   Host: ${hostName}`);
+    console.log(`   Session Storage: Enabled`);
   }
 
   /**
-   * Store shop information after successful OAuth
+   * Get the session storage instance
+   * This allows other parts of the codebase to access session storage directly
+   */
+  getSessionStorage(): ShopifySessionStorage {
+    return this.sessionStorage;
+  }
+
+  /**
+   * Store shop information from a Shopify Session object (new standard method)
+   * This method stores the session in session storage and updates the shop record
+   */
+  async storeShopFromSession(session: Session): Promise<Shop> {
+    // Store session in session storage first
+    const stored = await this.sessionStorage.storeSession(session);
+    if (!stored) {
+      throw new Error(`Failed to store session for shop: ${session.shop}`);
+    }
+
+    const client = await this.pool.connect();
+
+    try {
+      // Fetch primary domain from Shopify API
+      let primaryDomain: string | null = null;
+      try {
+        primaryDomain = await this.getShopPrimaryDomain(session.shop);
+      } catch (error: any) {
+        // Log but don't fail - primary domain is optional
+        console.warn(`⚠️ Failed to fetch primary domain for ${session.shop}:`, error.message);
+      }
+
+      // Check if shop already exists
+      const existingShop = await client.query<ShopDatabaseRow>(
+        'SELECT * FROM shops WHERE shop_domain = $1',
+        [session.shop]
+      );
+
+      if (existingShop.rows.length > 0) {
+        // Update existing shop (reinstall scenario)
+        // Note: session storage already updated session columns, but we also update access_token for backward compatibility
+        const result = await client.query<ShopDatabaseRow>(
+          `UPDATE shops 
+           SET access_token = $1, 
+               scope = $2, 
+               primary_domain = $3,
+               installed_at = CURRENT_TIMESTAMP,
+               uninstalled_at = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE shop_domain = $4
+           RETURNING *`,
+          [session.accessToken, session.scope || null, primaryDomain, session.shop]
+        );
+
+        console.log(`✅ Shop updated from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
+        return this.mapShopFromDatabase(result.rows[0]);
+      } else {
+        // Insert new shop
+        // Note: session storage already stored session columns, but we also insert access_token for backward compatibility
+        const result = await client.query<ShopDatabaseRow>(
+          `INSERT INTO shops (shop_domain, access_token, scope, primary_domain, installed_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+           RETURNING *`,
+          [session.shop, session.accessToken, session.scope || null, primaryDomain]
+        );
+
+        console.log(`✅ Shop stored from session: ${session.shop}${primaryDomain ? ` (primary domain: ${primaryDomain})` : ''}`);
+        return this.mapShopFromDatabase(result.rows[0]);
+      }
+    } catch (error: any) {
+      console.error('❌ Error storing shop from session:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Store shop information after successful OAuth (legacy method - kept for backward compatibility)
+   * @deprecated Use storeShopFromSession() instead
    */
   async storeShop(data: StoreShopRequest): Promise<Shop> {
     const client = await this.pool.connect();
@@ -64,7 +148,7 @@ export class ShopifyService extends BaseService {
       // Fetch primary domain from Shopify API
       let primaryDomain: string | null = null;
       try {
-        primaryDomain = await this.getShopPrimaryDomain(data.shopDomain, data.accessToken);
+        primaryDomain = await this.getShopPrimaryDomain(data.shopDomain);
       } catch (error: any) {
         // Log but don't fail - primary domain is optional
         console.warn(`⚠️ Failed to fetch primary domain for ${data.shopDomain}:`, error.message);
@@ -222,15 +306,44 @@ export class ShopifyService extends BaseService {
 
   /**
    * Create a Shopify GraphQL client for a shop
-   * Note: This is a simplified version. For full implementation,
-   * you may need to implement custom session storage.
-   * For now, these methods are placeholders for future implementation.
+   * Loads session from storage, with fallback to access_token column for backward compatibility
    */
-  async createGraphQLClient(shop: string, accessToken: string) {
-    // Create a custom session for GraphQL requests
-    // Note: In production, you should implement proper session storage
-    const session = this.shopify.session.customAppSession(shop);
-    (session as any).accessToken = accessToken;
+  async createGraphQLClient(shop: string): Promise<any> {
+    // Try session storage first
+    const sessionId = `offline_${shop}`; // Use shop domain for offline sessions
+    let session = await this.sessionStorage.loadSession(sessionId);
+    
+    // Fallback to access_token column if session not found (backward compatibility)
+    if (!session) {
+      const client = await this.pool.connect();
+      try {
+        const result = await client.query(
+          'SELECT access_token, scope FROM shops WHERE shop_domain = $1',
+          [shop]
+        );
+        
+        if (result.rows[0]?.access_token) {
+          // Create session from access_token (backward compatibility)
+          session = this.shopify.session.customAppSession(shop);
+          (session as any).accessToken = result.rows[0].access_token;
+          (session as any).scope = result.rows[0].scope || '';
+          
+          // Log migration opportunity
+          console.warn(`⚠️ Using access_token fallback for shop ${shop}. Consider migrating to session storage.`);
+        }
+      } finally {
+        client.release();
+      }
+    }
+    
+    if (!session || !session.accessToken) {
+      throw new Error(`No session or access token found for shop: ${shop}`);
+    }
+    
+    // Check expiration (for online sessions)
+    if (session.expires && new Date(session.expires) < new Date()) {
+      throw new Error(`Session expired for shop: ${shop}. Please re-authenticate.`);
+    }
     
     return new this.shopify.clients.Graphql({ session });
   }
@@ -238,12 +351,11 @@ export class ShopifyService extends BaseService {
   /**
    * Get shop primary domain from Shopify GraphQL API
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @returns Primary domain (e.g., shop.brandx.com) or null if not set
    */
-  async getShopPrimaryDomain(shopDomain: string, accessToken: string): Promise<string | null> {
+  async getShopPrimaryDomain(shopDomain: string): Promise<string | null> {
     try {
-      const client = await this.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.createGraphQLClient(shopDomain);
 
       const query = `
         query getShopPrimaryDomain {
@@ -255,17 +367,21 @@ export class ShopifyService extends BaseService {
         }
       `;
 
-      const response = await client.query<{
+      const response = await client.query({
         data: {
-          shop: {
-            primaryDomain: {
-              host: string;
-            } | null;
+          query: query,
+        },
+      }) as {
+        body: {
+          data: {
+            shop: {
+              primaryDomain: {
+                host: string;
+              } | null;
+            };
           };
         };
-      }>({
-        data: query,
-      });
+      };
 
       if (!response || !response.body || !response.body.data) {
         console.error('❌ Invalid response from Shopify shop query');
@@ -308,7 +424,7 @@ export class ShopifyService extends BaseService {
       const currentPrimaryDomain = shop.primaryDomain;
 
       // Fetch current primary domain from Shopify API
-      const newPrimaryDomain = await this.getShopPrimaryDomain(shopDomain, shop.accessToken);
+      const newPrimaryDomain = await this.getShopPrimaryDomain(shopDomain);
 
       // Only update if the value actually changed
       const hasChanged = currentPrimaryDomain !== newPrimaryDomain;

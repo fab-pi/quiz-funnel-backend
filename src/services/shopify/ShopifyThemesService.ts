@@ -20,9 +20,9 @@ export class ShopifyThemesService extends BaseService {
    * @param accessToken - Shopify access token
    * @returns Active theme GID (full GID string) or null if not found
    */
-  async getActiveThemeGid(shopDomain: string, accessToken: string): Promise<string | null> {
+  async getActiveThemeGid(shopDomain: string): Promise<string | null> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       const query = `
         query getThemes {
@@ -38,22 +38,26 @@ export class ShopifyThemesService extends BaseService {
         }
       `;
 
-      // GraphqlParams expects data as string or object
-      const response = await client.query<{
+      // GraphqlParams expects data as object with query and optional variables
+      const response = await client.query({
         data: {
-          themes: {
-            edges: Array<{
-              node: {
-                id: string;
-                name: string;
-                role: string;
-              };
-            }>;
+          query: query,
+        },
+      }) as {
+        body: {
+          data: {
+            themes: {
+              edges: Array<{
+                node: {
+                  id: string;
+                  name: string;
+                  role: string;
+                };
+              }>;
+            };
           };
         };
-      }>({
-        data: query,
-      });
+      };
 
       if (!response || !response.body || !response.body.data) {
         console.error('❌ Invalid response from Shopify themes query');
@@ -94,7 +98,7 @@ export class ShopifyThemesService extends BaseService {
    * @returns Active theme ID (numeric) or null if not found
    */
   async getActiveThemeId(shopDomain: string, accessToken: string): Promise<number | null> {
-    const themeGid = await this.getActiveThemeGid(shopDomain, accessToken);
+    const themeGid = await this.getActiveThemeGid(shopDomain);
     if (!themeGid) {
       return null;
     }
@@ -107,13 +111,13 @@ export class ShopifyThemesService extends BaseService {
    * @param accessToken - Shopify access token
    * @returns Array of theme objects with id, name, and role
    */
-  async listThemes(shopDomain: string, accessToken: string): Promise<Array<{
+  async listThemes(shopDomain: string): Promise<Array<{
     id: number;
     name: string;
     role: string;
   }>> {
     try {
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       const query = `
         query getThemes {
@@ -129,22 +133,26 @@ export class ShopifyThemesService extends BaseService {
         }
       `;
 
-      // GraphqlParams expects data as string or object
-      const response = await client.query<{
+      // GraphqlParams expects data as object with query and optional variables
+      const response = await client.query({
         data: {
-          themes: {
-            edges: Array<{
-              node: {
-                id: string;
-                name: string;
-                role: string;
-              };
-            }>;
+          query: query,
+        },
+      }) as {
+        body: {
+          data: {
+            themes: {
+              edges: Array<{
+                node: {
+                  id: string;
+                  name: string;
+                  role: string;
+                };
+              }>;
+            };
           };
         };
-      }>({
-        data: query,
-      });
+      };
 
       if (!response || !response.body || !response.body.data) {
         console.error('❌ Invalid response from Shopify themes query');

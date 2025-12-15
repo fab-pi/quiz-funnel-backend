@@ -18,7 +18,6 @@ export class ShopifyThemeAssetsService extends BaseService {
    * Create or update a Liquid template file in a Shopify theme
    * Uses GraphQL themeFilesUpsert mutation
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @param themeGid - Theme GID (full GID string from Shopify, e.g., "gid://shopify/Theme/123456")
    * @param templatePath - Template file path (e.g., "templates/page.quiz-app-iframe.liquid")
    * @param templateContent - Liquid template content
@@ -26,7 +25,6 @@ export class ShopifyThemeAssetsService extends BaseService {
    */
   async upsertTemplateFile(
     shopDomain: string,
-    accessToken: string,
     themeGid: string,
     templatePath: string,
     templateContent: string
@@ -35,7 +33,7 @@ export class ShopifyThemeAssetsService extends BaseService {
       console.log(`🔄 Uploading template file: ${templatePath} to theme ${themeGid} for shop ${shopDomain}...`);
 
       // Create GraphQL client
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Convert GID format if needed
       // Themes query returns: gid://shopify/Theme/{id}
@@ -83,19 +81,21 @@ export class ShopifyThemeAssetsService extends BaseService {
       };
 
       // Execute GraphQL mutation
-      const response = await client.query<{
-        data: {
-          themeFilesUpsert: {
-            upsertedThemeFiles: Array<{ filename: string }>;
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            themeFilesUpsert: {
+              upsertedThemeFiles: Array<{ filename: string }>;
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify themeFilesUpsert mutation');
@@ -140,12 +140,11 @@ export class ShopifyThemeAssetsService extends BaseService {
    */
   async createQuizAppTemplate(
     shopDomain: string,
-    accessToken: string,
     themeGid: string,
     templateContent: string
   ): Promise<void> {
     const templatePath = 'templates/page.quiz-app-iframe.liquid';
-    return this.upsertTemplateFile(shopDomain, accessToken, themeGid, templatePath, templateContent);
+    return this.upsertTemplateFile(shopDomain, themeGid, templatePath, templateContent);
   }
 
   /**
@@ -160,7 +159,6 @@ export class ShopifyThemeAssetsService extends BaseService {
    */
   async deleteTemplateFile(
     shopDomain: string,
-    accessToken: string,
     themeGid: string,
     templatePath: string
   ): Promise<void> {
@@ -172,7 +170,7 @@ export class ShopifyThemeAssetsService extends BaseService {
       // For now, we'll use themeFilesUpsert to set file content to empty string
       // This effectively "deletes" the file content
       
-      const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const client = await this.shopifyService.createGraphQLClient(shopDomain);
 
       const mutation = `
         mutation themeFilesUpsert($files: [OnlineStoreThemeFilesUpsertFileInput!]!, $themeId: ID!) {
@@ -202,19 +200,21 @@ export class ShopifyThemeAssetsService extends BaseService {
         ],
       };
 
-      const response = await client.query<{
-        data: {
-          themeFilesUpsert: {
-            upsertedThemeFiles: Array<{ filename: string }>;
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await client.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            themeFilesUpsert: {
+              upsertedThemeFiles: Array<{ filename: string }>;
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify themeFilesUpsert mutation');
@@ -247,11 +247,10 @@ export class ShopifyThemeAssetsService extends BaseService {
    */
   async deleteQuizAppTemplate(
     shopDomain: string,
-    accessToken: string,
     themeGid: string
   ): Promise<void> {
     const templatePath = 'templates/page.quiz-app-iframe.liquid';
-    return this.deleteTemplateFile(shopDomain, accessToken, themeGid, templatePath);
+    return this.deleteTemplateFile(shopDomain, themeGid, templatePath);
   }
 
   /**

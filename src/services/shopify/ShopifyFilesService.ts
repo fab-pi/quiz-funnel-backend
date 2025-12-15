@@ -20,7 +20,6 @@ export class ShopifyFilesService extends BaseService {
    * Create staged upload target (Step 1 of Shopify's recommended flow)
    * Returns signed URL and parameters for direct client upload
    * @param shopDomain - Shop domain
-   * @param accessToken - Shopify access token
    * @param filename - Original filename
    * @param mimeType - File MIME type
    * @param fileSize - File size in bytes
@@ -28,7 +27,6 @@ export class ShopifyFilesService extends BaseService {
    */
   async createStagedUpload(
     shopDomain: string,
-    accessToken: string,
     filename: string,
     mimeType: string,
     fileSize: number
@@ -38,7 +36,7 @@ export class ShopifyFilesService extends BaseService {
     parameters: Array<{ name: string; value: string }>;
   }> {
     // Create GraphQL client
-    const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+    const client = await this.shopifyService.createGraphQLClient(shopDomain);
     
     const result = await this.createStagedUploadInternal(client, filename, mimeType, fileSize);
     
@@ -141,12 +139,11 @@ export class ShopifyFilesService extends BaseService {
    */
   async finalizeFileUpload(
     shopDomain: string,
-    accessToken: string,
     resourceUrl: string,
     filename: string
   ): Promise<string> {
     // Create GraphQL client
-    const client = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+    const client = await this.shopifyService.createGraphQLClient(shopDomain);
     
     return await this.createFileFromStagedUploadInternal(client, resourceUrl, filename);
   }

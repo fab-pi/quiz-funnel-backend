@@ -19,13 +19,11 @@ export class ShopifyBillingService extends BaseService {
   /**
    * Create a new app subscription with selected plan
    * @param shopDomain - Shop domain (e.g., mystore.myshopify.com)
-   * @param accessToken - Shopify access token
    * @param planId - Plan ID (starter, advanced, scaling)
    * @returns Confirmation URL and subscription GID
    */
   async createSubscription(
     shopDomain: string,
-    accessToken: string,
     planId: string
   ): Promise<{ confirmationUrl: string; subscriptionGid: string; status: string; currentPeriodEnd: Date | null }> {
     const plan = getPlanById(planId);
@@ -42,7 +40,7 @@ export class ShopifyBillingService extends BaseService {
       }
 
       // Create GraphQL client
-      const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain);
 
       // Build return URL for confirmation
       const appUrl = process.env.SHOPIFY_APP_URL || process.env.FRONTEND_URL || 'https://quiz.try-directquiz.com';
@@ -106,25 +104,27 @@ export class ShopifyBillingService extends BaseService {
 
       console.log(`🔄 Creating subscription for shop ${shopDomain} with plan ${planId}...`);
 
-      const response = await graphqlClient.query<{
-        data: {
-          appSubscriptionCreate: {
-            appSubscription: {
-              id: string;
-              status: string;
-              currentPeriodEnd: string | null;
-              trialDays: number;
-            } | null;
-            confirmationUrl: string | null;
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await graphqlClient.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            appSubscriptionCreate: {
+              appSubscription: {
+                id: string;
+                status: string;
+                currentPeriodEnd: string | null;
+                trialDays: number;
+              } | null;
+              confirmationUrl: string | null;
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify appSubscriptionCreate mutation');
@@ -206,17 +206,15 @@ export class ShopifyBillingService extends BaseService {
   /**
    * Cancel an active subscription
    * @param shopDomain - Shop domain
-   * @param accessToken - Shopify access token
    * @param subscriptionGid - Subscription GID
    */
   async cancelSubscription(
     shopDomain: string,
-    accessToken: string,
     subscriptionGid: string
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain, accessToken);
+      const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain);
 
       const mutation = `
         mutation appSubscriptionCancel($id: ID!) {
@@ -239,22 +237,24 @@ export class ShopifyBillingService extends BaseService {
 
       console.log(`🔄 Cancelling subscription ${subscriptionGid} for shop ${shopDomain}...`);
 
-      const response = await graphqlClient.query<{
-        data: {
-          appSubscriptionCancel: {
-            appSubscription: {
-              id: string;
-              status: string;
-            } | null;
-            userErrors: Array<{ field: string[]; message: string }>;
-          };
-        };
-      }>({
+      const response = await graphqlClient.query({
         data: {
           query: mutation,
           variables: variables,
         },
-      });
+      }) as {
+        body: {
+          data: {
+            appSubscriptionCancel: {
+              appSubscription: {
+                id: string;
+                status: string;
+              } | null;
+              userErrors: Array<{ field: string[]; message: string }>;
+            };
+          };
+        };
+      };
 
       if (!response || !response.body || !response.body.data) {
         throw new Error('Invalid response from Shopify appSubscriptionCancel mutation');

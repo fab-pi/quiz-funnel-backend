@@ -122,7 +122,6 @@ router.get('/upload/shopify/staged-url', shopifyAuthenticate, async (req: Shopif
     // Get staged upload target
     const stagedTarget = await shopifyFilesService.createStagedUpload(
       shopDomain,
-      shop.accessToken,
       filename as string,
       mimeType as string,
       fileSizeNum
@@ -162,12 +161,12 @@ router.post('/upload/shopify/finalize', shopifyAuthenticate, async (req: Shopify
       });
     }
 
-    // Get access token from shop
+    // Verify shop exists
     const shop = await shopifyService!.getShopByDomain(shopDomain);
-    if (!shop || !shop.accessToken) {
+    if (!shop) {
       return res.status(401).json({
         success: false,
-        message: 'Shop access token not found'
+        message: 'Shop not found'
       });
     }
 
@@ -184,7 +183,6 @@ router.post('/upload/shopify/finalize', shopifyAuthenticate, async (req: Shopify
     // Finalize file upload
     const cdnUrl = await shopifyFilesService.finalizeFileUpload(
       shopDomain,
-      shop.accessToken,
       resourceUrl,
       filename
     );

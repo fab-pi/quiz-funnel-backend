@@ -71,8 +71,13 @@ CREATE TABLE shops (
     shop_id SERIAL PRIMARY KEY,
     shop_domain VARCHAR(255) UNIQUE NOT NULL,
     primary_domain VARCHAR(255) NULL, -- Primary domain for the Shopify store (e.g., shop.brandx.com). NULL means store uses default myshopify.com domain.
-    access_token TEXT NOT NULL,
+    access_token TEXT NOT NULL, -- Kept for backward compatibility during migration to session storage
     scope TEXT,
+    session_id VARCHAR(255) NULL, -- Shopify session ID (format: offline_{shop} or online_{shop}_{userId}). Used for session storage lookup.
+    session_expires TIMESTAMP NULL, -- Session expiration timestamp. NULL for offline sessions (they don't expire).
+    session_scope TEXT NULL, -- OAuth scopes granted to this session. Stored separately from scope column for session management.
+    session_state VARCHAR(255) NULL, -- OAuth state parameter for CSRF protection. Generated during OAuth initiation.
+    session_is_online BOOLEAN DEFAULT false, -- Whether this is an online session (user-specific) or offline session (app-level). Default: false (offline).
     installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     uninstalled_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -234,6 +239,10 @@ CREATE INDEX idx_shops_uninstalled ON shops(uninstalled_at)
     WHERE uninstalled_at IS NOT NULL;
 CREATE INDEX idx_shops_primary_domain ON shops(primary_domain) 
     WHERE primary_domain IS NOT NULL;
+CREATE INDEX idx_shops_session_id ON shops(session_id) 
+    WHERE session_id IS NOT NULL;
+CREATE INDEX idx_shops_session_expires ON shops(session_expires) 
+    WHERE session_expires IS NOT NULL;
 
 -- Quizzes table indexes for shop_id
 CREATE INDEX idx_quizzes_shop_id ON quizzes(shop_id) 
@@ -351,8 +360,13 @@ COMMENT ON COLUMN email_tokens.token_type IS 'Type of token: email_verification 
 COMMENT ON COLUMN email_tokens.used_at IS 'Timestamp when token was used (NULL if not used yet)';
 COMMENT ON COLUMN shops.shop_domain IS 'Shop domain (e.g., mystore.myshopify.com)';
 COMMENT ON COLUMN shops.primary_domain IS 'Primary domain for the Shopify store (e.g., shop.brandx.com). NULL means store uses default myshopify.com domain. This is the custom domain that customers see when visiting the store.';
-COMMENT ON COLUMN shops.access_token IS 'Shopify OAuth access token (should be encrypted in production)';
+COMMENT ON COLUMN shops.access_token IS 'Shopify OAuth access token (should be encrypted in production). Kept for backward compatibility during migration to session storage.';
 COMMENT ON COLUMN shops.scope IS 'Comma-separated list of granted OAuth scopes';
+COMMENT ON COLUMN shops.session_id IS 'Shopify session ID (format: offline_{shop} or online_{shop}_{userId}). Used for session storage lookup.';
+COMMENT ON COLUMN shops.session_expires IS 'Session expiration timestamp. NULL for offline sessions (they don''t expire).';
+COMMENT ON COLUMN shops.session_scope IS 'OAuth scopes granted to this session. Stored separately from scope column for session management.';
+COMMENT ON COLUMN shops.session_state IS 'OAuth state parameter for CSRF protection. Generated during OAuth initiation.';
+COMMENT ON COLUMN shops.session_is_online IS 'Whether this is an online session (user-specific) or offline session (app-level). Default: false (offline).';
 COMMENT ON COLUMN shops.installed_at IS 'Timestamp when app was installed';
 COMMENT ON COLUMN shops.uninstalled_at IS 'Timestamp when app was uninstalled (NULL if currently installed)';
 COMMENT ON COLUMN shop_subscriptions.plan_id IS 'Plan ID: starter, advanced, or scaling';
