@@ -25,9 +25,9 @@ export class SessionService extends BaseService {
     try {
       const { quiz_id, utm_params, fbp, fbc } = data;
 
-      // Verify quiz exists and get Facebook Pixel config
+      // Verify quiz exists and get shop_id for usage tracking
       const quizCheck = await client.query(
-        'SELECT quiz_id, facebook_pixel_id, facebook_access_token_encrypted, quiz_name FROM quizzes WHERE quiz_id = $1',
+        'SELECT quiz_id, shop_id, facebook_pixel_id, facebook_access_token_encrypted, quiz_name FROM quizzes WHERE quiz_id = $1',
         [parseInt(quiz_id)]
       );
 
@@ -36,6 +36,31 @@ export class SessionService extends BaseService {
       }
 
       const quiz = quizCheck.rows[0];
+
+      // Track usage for Shopify shops (check limits)
+      if (quiz.shop_id) {
+        try {
+          // Import UsageTrackingService dynamically to avoid circular dependency
+          const { UsageTrackingService } = await import('./UsageTrackingService');
+          const { ShopifyBillingService } = await import('./shopify/ShopifyBillingService');
+          const { ShopifyService } = await import('./shopify/ShopifyService');
+          
+          const shopifyService = new ShopifyService(this.pool);
+          const billingService = new ShopifyBillingService(this.pool, shopifyService);
+          const usageService = new UsageTrackingService(this.pool, billingService);
+          
+          await usageService.trackSession(quiz.shop_id);
+        } catch (usageError: any) {
+          // Re-throw billing errors with specific codes
+          if (usageError.message === 'SESSION_LIMIT_EXCEEDED' || 
+              usageError.message === 'SUBSCRIPTION_REQUIRED' ||
+              usageError.message === 'SUBSCRIPTION_INACTIVE') {
+            throw usageError;
+          }
+          // Log other errors but don't block session creation
+          console.warn(`⚠️ Usage tracking error (non-blocking):`, usageError.message);
+        }
+      }
 
       // Generate session ID as UUID
       const sessionId = randomUUID();

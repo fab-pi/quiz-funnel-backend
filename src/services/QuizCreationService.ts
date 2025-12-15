@@ -44,6 +44,29 @@ export class QuizCreationService extends BaseService {
 
       console.log(`🔄 Starting quiz creation transaction for user ${userId}...`);
 
+      // Check quiz limit for Shopify shops before creating
+      if (shopId) {
+        try {
+          const { UsageTrackingService } = await import('./UsageTrackingService');
+          const { ShopifyBillingService } = await import('./shopify/ShopifyBillingService');
+          
+          const billingService = new ShopifyBillingService(this.pool, this.shopifyService!);
+          const usageService = new UsageTrackingService(this.pool, billingService);
+          
+          await usageService.checkQuizLimit(shopId);
+        } catch (usageError: any) {
+          // Re-throw billing errors
+          if (usageError.message === 'QUIZ_LIMIT_EXCEEDED' || 
+              usageError.message === 'SUBSCRIPTION_REQUIRED' ||
+              usageError.message === 'SUBSCRIPTION_INACTIVE') {
+            await client.query('ROLLBACK');
+            throw usageError;
+          }
+          // Log other errors but continue
+          console.warn(`⚠️ Usage check error (non-blocking):`, usageError.message);
+        }
+      }
+
       // Encrypt Facebook access token if provided
       const encryptedToken = data.facebook_access_token 
         ? facebookPixelService.encryptToken(data.facebook_access_token)
@@ -530,6 +553,44 @@ export class QuizCreationService extends BaseService {
           throw new Error(`Duplicate sequence_order: ${question.sequence_order}. Each question must have a unique sequence_order.`);
         }
         sequenceOrders.add(question.sequence_order);
+      }
+
+      // Get existing quiz to check if activating
+      const existingQuizResult = await client.query(
+        'SELECT shop_id, is_active FROM quizzes WHERE quiz_id = $1',
+        [quizId]
+      );
+
+      if (existingQuizResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        throw new Error('Quiz not found');
+      }
+
+      const existingQuiz = existingQuizResult.rows[0];
+      const quizShopId = existingQuiz.shop_id;
+
+      // Check quiz limit if activating a quiz for a Shopify shop
+      if (quizShopId && data.is_active && !existingQuiz.is_active) {
+        // Quiz is being activated (was inactive, now active)
+        try {
+          const { UsageTrackingService } = await import('./UsageTrackingService');
+          const { ShopifyBillingService } = await import('./shopify/ShopifyBillingService');
+          
+          const billingService = new ShopifyBillingService(this.pool, this.shopifyService!);
+          const usageService = new UsageTrackingService(this.pool, billingService);
+          
+          await usageService.checkQuizLimit(quizShopId);
+        } catch (usageError: any) {
+          // Re-throw billing errors
+          if (usageError.message === 'QUIZ_LIMIT_EXCEEDED' || 
+              usageError.message === 'SUBSCRIPTION_REQUIRED' ||
+              usageError.message === 'SUBSCRIPTION_INACTIVE') {
+            await client.query('ROLLBACK');
+            throw usageError;
+          }
+          // Log other errors but continue
+          console.warn(`⚠️ Usage check error (non-blocking):`, usageError.message);
+        }
       }
 
       // Encrypt Facebook access token if provided

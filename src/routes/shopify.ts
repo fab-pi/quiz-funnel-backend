@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ShopifyService } from '../services/shopify/ShopifyService';
+import { ShopifyBillingService } from '../services/shopify/ShopifyBillingService';
 import { QuizContentService } from '../services/QuizContentService';
 import { captureRawQueryString, RawQueryRequest } from '../middleware/rawQueryString';
 import { shopifyAuthenticate, ShopifyRequest } from '../middleware/shopifyAuth';
@@ -7,6 +8,7 @@ import pool from '../config/db';
 
 const router = Router();
 const shopifyService = new ShopifyService(pool);
+const shopifyBillingService = new ShopifyBillingService(pool, shopifyService);
 const quizContentService = new QuizContentService(pool);
 
 /**
@@ -647,16 +649,111 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
     console.log(`   Access token obtained, scope: ${scope}`);
 
     // Store shop in database
-    await shopifyService.storeShop({
+    const storedShop = await shopifyService.storeShop({
       shopDomain: shop,
       accessToken: accessToken,
       scope: scope,
     });
 
-    // Redirect to app
-    const appUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
-    const redirectUrl = `${appUrl}/shopify?shop=${shop}${host ? `&host=${host}` : ''}`;
+    /**
+     * Register billing webhook: APP_SUBSCRIPTIONS_UPDATE
+     * Shopify docs recommend using webhookSubscriptionCreate for app webhooks.
+     * We do this here so every installed shop has the billing webhook configured.
+     * If this fails, we log a warning but do NOT block the OAuth flow.
+     */
+    try {
+      console.log(`🔄 Ensuring APP_SUBSCRIPTIONS_UPDATE webhook is registered for shop ${shop}...`);
 
+      const graphqlClient = await shopifyService.createGraphQLClient(shop, accessToken);
+
+      const webhookMutation = `
+        mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+          webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+            webhookSubscription {
+              id
+              callbackUrl
+              topic
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      // Base URL for webhook callback – must be publicly accessible over HTTPS
+      const webhookBaseUrl =
+        process.env.SHOPIFY_WEBHOOK_BASE_URL ||
+        process.env.API_BASE_URL ||
+        'https://api.try-directquiz.com';
+
+      const webhookCallbackUrl = `${webhookBaseUrl.replace(/\/+$/, '')}/api/shopify/webhooks/app_subscriptions/update`;
+
+      const webhookVariables = {
+        topic: 'APP_SUBSCRIPTIONS_UPDATE',
+        webhookSubscription: {
+          callbackUrl: webhookCallbackUrl,
+          format: 'JSON' as const,
+        },
+      };
+
+      const webhookResponse = await graphqlClient.query<{
+        data: {
+          webhookSubscriptionCreate: {
+            webhookSubscription: {
+              id: string;
+              callbackUrl: string;
+              topic: string;
+            } | null;
+            userErrors: Array<{ field: string[] | null; message: string }>;
+          };
+        };
+      }>({
+        data: {
+          query: webhookMutation,
+          variables: webhookVariables,
+        },
+      });
+
+      if (!webhookResponse || !webhookResponse.body || !webhookResponse.body.data) {
+        console.warn('⚠️ APP_SUBSCRIPTIONS_UPDATE webhook registration returned empty response body');
+      } else {
+        const result = webhookResponse.body.data.webhookSubscriptionCreate;
+
+        if (result.userErrors && result.userErrors.length > 0) {
+          // Common benign case: webhook already exists -> user error about duplicate subscription
+          const messages = result.userErrors.map((e) => e.message).join(', ');
+          console.warn(`⚠️ APP_SUBSCRIPTIONS_UPDATE webhook registration returned userErrors: ${messages}`);
+        } else if (result.webhookSubscription) {
+          console.log('✅ APP_SUBSCRIPTIONS_UPDATE webhook registered:', result.webhookSubscription);
+        } else {
+          console.warn('⚠️ APP_SUBSCRIPTIONS_UPDATE webhook registration returned no subscription and no errors');
+        }
+      }
+    } catch (webhookError: any) {
+      // Do not fail OAuth flow if webhook registration fails; just log for later investigation
+      console.warn(
+        `⚠️ Failed to register APP_SUBSCRIPTIONS_UPDATE webhook for shop ${shop}:`,
+        webhookError?.message || webhookError
+      );
+    }
+
+    // Check if shop has an active subscription
+    const activeSubscription = await shopifyBillingService.getActiveSubscriptionByShopId(storedShop.shopId);
+
+    const appUrl = process.env.SHOPIFY_APP_URL || 'https://quiz.try-directquiz.com';
+    
+    if (!activeSubscription || (activeSubscription.status !== 'ACTIVE' && activeSubscription.status !== 'TRIAL')) {
+      // No active subscription, redirect to plan selection
+      console.log(`ℹ️ No active subscription found for shop ${shop}, redirecting to plan selection`);
+      const redirectUrl = `${appUrl}/shopify/plans?shop=${shop}${host ? `&host=${host}` : ''}`;
+      res.redirect(redirectUrl);
+      return;
+    }
+
+    // Has active subscription, redirect to dashboard
+    const redirectUrl = `${appUrl}/shopify?shop=${shop}${host ? `&host=${host}` : ''}`;
     console.log(`✅ Redirecting to app: ${redirectUrl}`);
     res.redirect(redirectUrl);
 
@@ -703,6 +800,329 @@ router.put('/shopify/shop/refresh-primary-domain', shopifyAuthenticate, async (r
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to refresh primary domain'
+    });
+  }
+});
+
+/**
+ * GET /api/shopify/plans
+ * Get available subscription plans
+ * Public endpoint (no auth required for viewing plans)
+ */
+router.get('/shopify/plans', async (req: Request, res: Response) => {
+  try {
+    const { PLANS } = await import('../config/plans');
+    
+    res.json({
+      success: true,
+      data: PLANS.map(plan => ({
+        id: plan.id,
+        name: plan.name,
+        price: plan.price,
+        trialDays: plan.trialDays,
+        maxSessions: plan.maxSessions,
+        maxQuizzes: plan.maxQuizzes,
+        features: plan.features
+      }))
+    });
+  } catch (error: any) {
+    console.error('❌ Error fetching plans:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch plans'
+    });
+  }
+});
+
+/**
+ * GET /api/shopify/subscription/status
+ * Get current subscription status and usage for authenticated shop
+ * Protected: Requires Shopify authentication
+ */
+router.get('/shopify/subscription/status', shopifyAuthenticate, async (req: ShopifyRequest, res: Response) => {
+  try {
+    const shopDomain = req.shop;
+    if (!shopDomain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop domain is required'
+      });
+    }
+
+    // Get active subscription
+    const subscription = await shopifyBillingService.getActiveSubscriptionByShopDomain(shopDomain);
+    
+    // Get current month usage
+    const client = await pool.connect();
+    try {
+      const currentMonth = new Date();
+      currentMonth.setDate(1); // First day of month
+      
+      const usageResult = await client.query(
+        `SELECT sessions_count, active_quizzes_count 
+         FROM shop_usage 
+         WHERE shop_id = (SELECT shop_id FROM shops WHERE shop_domain = $1)
+         AND month = $2`,
+        [shopDomain, currentMonth]
+      );
+
+      const usage = usageResult.rows[0] || { sessions_count: 0, active_quizzes_count: 0 };
+
+      // Get current active quizzes count
+      const quizzesResult = await client.query(
+        `SELECT COUNT(*) as count 
+         FROM quizzes 
+         WHERE shop_id = (SELECT shop_id FROM shops WHERE shop_domain = $1)
+         AND is_active = true`,
+        [shopDomain]
+      );
+      const activeQuizzes = parseInt(quizzesResult.rows[0]?.count || '0');
+
+      // Get plan details
+      const { PLANS, getPlanById } = await import('../config/plans');
+      const plan = subscription ? getPlanById(subscription.planId) : null;
+
+      res.json({
+        success: true,
+        data: {
+          planId: subscription?.planId || null,
+          planName: plan?.name || null,
+          status: subscription?.status || null,
+          trialEndsAt: subscription?.trialEndsAt || null,
+          isTrial: subscription?.isTrial || false,
+          currentPeriodEnd: subscription?.currentPeriodEnd || null,
+          currentMonthSessions: usage.sessions_count || 0,
+          maxSessions: plan?.maxSessions || null,
+          activeQuizzes: activeQuizzes,
+          maxQuizzes: plan?.maxQuizzes || null,
+          features: plan?.features || {
+            facebookPixel: false,
+            conversionAPI: false
+          }
+        }
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    console.error('❌ Error fetching subscription status:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch subscription status'
+    });
+  }
+});
+
+/**
+ * POST /api/shopify/subscription/create
+ * Create a new subscription with selected plan
+ * Protected: Requires Shopify authentication
+ */
+router.post('/shopify/subscription/create', shopifyAuthenticate, async (req: ShopifyRequest, res: Response) => {
+  try {
+    const shopDomain = req.shop;
+    const { planId } = req.body;
+
+    if (!shopDomain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop domain is required'
+      });
+    }
+
+    if (!planId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Plan ID is required'
+      });
+    }
+
+    // Validate plan ID
+    const { PLANS, getPlanById } = await import('../config/plans');
+    const plan = getPlanById(planId);
+    if (!plan) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid plan ID: ${planId}`
+      });
+    }
+
+    // Get shop access token
+    const shop = await shopifyService.getShopByDomain(shopDomain);
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found'
+      });
+    }
+
+    console.log(`🔄 Creating subscription for shop ${shopDomain} with plan ${planId}...`);
+
+    // Create subscription
+    const result = await shopifyBillingService.createSubscription(
+      shopDomain,
+      shop.accessToken,
+      planId
+    );
+
+    res.json({
+      success: true,
+      data: {
+        confirmationUrl: result.confirmationUrl,
+        subscriptionGid: result.subscriptionGid,
+        status: result.status,
+        currentPeriodEnd: result.currentPeriodEnd
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Error creating subscription:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create subscription'
+    });
+  }
+});
+
+/**
+ * POST /api/shopify/subscription/cancel
+ * Cancel active subscription
+ * Protected: Requires Shopify authentication
+ */
+router.post('/shopify/subscription/cancel', shopifyAuthenticate, async (req: ShopifyRequest, res: Response) => {
+  try {
+    const shopDomain = req.shop;
+    if (!shopDomain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop domain is required'
+      });
+    }
+
+    // Get active subscription
+    const subscription = await shopifyBillingService.getActiveSubscriptionByShopDomain(shopDomain);
+    if (!subscription) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active subscription found'
+      });
+    }
+
+    // Get shop access token
+    const shop = await shopifyService.getShopByDomain(shopDomain);
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found'
+      });
+    }
+
+    // Cancel subscription
+    await shopifyBillingService.cancelSubscription(
+      shopDomain,
+      shop.accessToken,
+      subscription.subscriptionGid
+    );
+
+    res.json({
+      success: true,
+      message: 'Subscription cancelled successfully'
+    });
+  } catch (error: any) {
+    console.error('❌ Error cancelling subscription:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to cancel subscription'
+    });
+  }
+});
+
+/**
+ * POST /api/shopify/webhooks/app_subscriptions/update
+ * Handles subscription update webhook from Shopify
+ * Updates subscription status when merchant approves, cancels, or trial ends
+ */
+router.post('/shopify/webhooks/app_subscriptions/update', async (req: Request, res: Response) => {
+  try {
+    const shop = req.headers['x-shopify-shop-domain'] as string;
+    
+    if (!shop) {
+      console.error('❌ Webhook missing shop domain');
+      return res.status(400).json({
+        success: false,
+        message: 'Missing shop domain in webhook'
+      });
+    }
+
+    console.log(`🔄 Processing subscription update webhook for shop: ${shop}`);
+
+    const appSubscription = req.body.app_subscription;
+    if (!appSubscription || !appSubscription.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing app_subscription data'
+      });
+    }
+
+    const subscriptionGid = appSubscription.id;
+    const status = appSubscription.status; // ACTIVE, CANCELLED, EXPIRED, etc.
+    const currentPeriodEnd = appSubscription.current_period_end 
+      ? new Date(appSubscription.current_period_end) 
+      : null;
+    const trialDays = appSubscription.trial_days || 0;
+    
+    // Calculate trial end date
+    const trialEndsAt = trialDays > 0 && appSubscription.created_at
+      ? new Date(new Date(appSubscription.created_at).getTime() + trialDays * 24 * 60 * 60 * 1000)
+      : null;
+    
+    const isTrial = trialDays > 0 && trialEndsAt && new Date() < trialEndsAt;
+
+    // Get shop_id from database
+    const client = await pool.connect();
+    try {
+      const shopResult = await client.query(
+        'SELECT shop_id FROM shops WHERE shop_domain = $1',
+        [shop]
+      );
+
+      if (shopResult.rows.length === 0) {
+        console.error(`❌ Shop not found: ${shop}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Shop not found'
+        });
+      }
+
+      const shopId = shopResult.rows[0].shop_id;
+
+      // Update subscription in database
+      await client.query(
+        `UPDATE shop_subscriptions 
+         SET status = $1,
+             trial_days = $2,
+             trial_ends_at = $3,
+             is_trial = $4,
+             current_period_end = $5,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_gid = $6`,
+        [status, trialDays, trialEndsAt, isTrial, currentPeriodEnd, subscriptionGid]
+      );
+
+      console.log(`✅ Subscription updated for shop ${shop}: ${subscriptionGid}`);
+      console.log(`   Status: ${status}, Trial: ${isTrial}, Period End: ${currentPeriodEnd}`);
+
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed successfully'
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    console.error('❌ Error processing subscription update webhook:', error);
+    res.status(200).json({
+      success: false,
+      message: 'Webhook received but processing failed'
     });
   }
 });
