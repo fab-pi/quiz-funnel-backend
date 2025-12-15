@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS user_sessions CASCADE;
 DROP TABLE IF EXISTS email_tokens CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS shop_usage CASCADE;
+DROP TABLE IF EXISTS shop_subscriptions CASCADE;
 DROP TABLE IF EXISTS quizzes CASCADE;
 DROP TABLE IF EXISTS shops CASCADE;
 
@@ -78,6 +80,42 @@ CREATE TABLE shops (
     CONSTRAINT check_uninstalled_after_installed CHECK (
         uninstalled_at IS NULL OR uninstalled_at >= installed_at
     )
+);
+
+-- Create shop_subscriptions table (Shopify app billing)
+CREATE TABLE shop_subscriptions (
+  subscription_id SERIAL PRIMARY KEY,
+  shop_id INTEGER NOT NULL REFERENCES shops(shop_id) ON DELETE CASCADE,
+  plan_id VARCHAR(50) NOT NULL CHECK (plan_id IN ('starter', 'advanced', 'scaling')),
+  subscription_gid VARCHAR(255) UNIQUE NOT NULL, -- Shopify subscription GID (e.g., gid://shopify/AppSubscription/123456)
+  status VARCHAR(50) NOT NULL DEFAULT 'PENDING', -- PENDING, ACTIVE, CANCELLED, EXPIRED, TRIAL
+  trial_days INTEGER DEFAULT 7,
+  trial_ends_at TIMESTAMP NULL,
+  is_trial BOOLEAN DEFAULT true,
+  current_period_end TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT check_trial_ends_after_created CHECK (
+    trial_ends_at IS NULL OR trial_ends_at >= created_at
+  ),
+  CONSTRAINT check_period_ends_after_created CHECK (
+    current_period_end IS NULL OR current_period_end >= created_at
+  )
+);
+
+-- Create shop_usage table (monthly usage tracking)
+CREATE TABLE shop_usage (
+  usage_id SERIAL PRIMARY KEY,
+  shop_id INTEGER NOT NULL REFERENCES shops(shop_id) ON DELETE CASCADE,
+  month DATE NOT NULL, -- First day of billing month (YYYY-MM-01)
+  sessions_count INTEGER DEFAULT 0 NOT NULL,
+  active_quizzes_count INTEGER DEFAULT 0 NOT NULL, -- Snapshot of active quizzes at month start
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(shop_id, month),
+  CONSTRAINT check_month_format CHECK (
+    EXTRACT(DAY FROM month) = 1 -- Ensure it's the first day of the month
+  )
 );
 
 -- Create quizzes table
@@ -203,6 +241,13 @@ CREATE INDEX idx_quizzes_shop_id ON quizzes(shop_id)
 CREATE INDEX idx_quizzes_shop_active ON quizzes(shop_id, is_active) 
     WHERE shop_id IS NOT NULL AND is_active = true;
 
+-- Billing tables indexes
+CREATE INDEX idx_subscriptions_shop ON shop_subscriptions(shop_id);
+CREATE INDEX idx_subscriptions_status ON shop_subscriptions(status);
+CREATE INDEX idx_subscriptions_gid ON shop_subscriptions(subscription_gid);
+CREATE INDEX idx_usage_shop_month ON shop_usage(shop_id, month);
+CREATE INDEX idx_usage_month ON shop_usage(month);
+
 -- Indexes for Shopify page fields
 CREATE INDEX idx_quizzes_shopify_page_id ON quizzes(shopify_page_id) 
     WHERE shopify_page_id IS NOT NULL;
@@ -245,6 +290,18 @@ CREATE TRIGGER update_shops_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Create trigger for shop_subscriptions table
+CREATE TRIGGER update_shop_subscriptions_updated_at 
+    BEFORE UPDATE ON shop_subscriptions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create trigger for shop_usage table
+CREATE TRIGGER update_shop_usage_updated_at 
+    BEFORE UPDATE ON shop_usage
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- Add constraints
 -- Note: unique_quiz_sequence constraint is replaced by partial unique index
 -- that only applies to non-archived questions (see below)
@@ -276,6 +333,8 @@ COMMENT ON TABLE users IS 'User accounts with authentication and authorization';
 COMMENT ON TABLE refresh_tokens IS 'JWT refresh tokens for session management';
 COMMENT ON TABLE email_tokens IS 'One-time tokens for email verification and password reset';
 COMMENT ON TABLE shops IS 'Shopify shops that have installed the app';
+COMMENT ON TABLE shop_subscriptions IS 'Tracks Shopify app subscriptions for each shop. One active subscription per shop at a time.';
+COMMENT ON TABLE shop_usage IS 'Tracks monthly usage statistics (sessions, active quizzes) for each shop. One record per shop per month.';
 COMMENT ON TABLE quizzes IS 'Stores quiz definitions and configuration';
 COMMENT ON TABLE questions IS 'Stores questions for each quiz';
 COMMENT ON TABLE answer_options IS 'Stores answer options for each question';
@@ -296,6 +355,15 @@ COMMENT ON COLUMN shops.access_token IS 'Shopify OAuth access token (should be e
 COMMENT ON COLUMN shops.scope IS 'Comma-separated list of granted OAuth scopes';
 COMMENT ON COLUMN shops.installed_at IS 'Timestamp when app was installed';
 COMMENT ON COLUMN shops.uninstalled_at IS 'Timestamp when app was uninstalled (NULL if currently installed)';
+COMMENT ON COLUMN shop_subscriptions.plan_id IS 'Plan ID: starter, advanced, or scaling';
+COMMENT ON COLUMN shop_subscriptions.subscription_gid IS 'Shopify GraphQL Global ID for the subscription';
+COMMENT ON COLUMN shop_subscriptions.status IS 'Subscription status: PENDING (awaiting approval), ACTIVE (billing active), CANCELLED, EXPIRED, TRIAL';
+COMMENT ON COLUMN shop_subscriptions.trial_ends_at IS 'When the trial period ends. NULL if not in trial.';
+COMMENT ON COLUMN shop_subscriptions.is_trial IS 'Whether the subscription is currently in trial period';
+COMMENT ON COLUMN shop_subscriptions.current_period_end IS 'End date of current billing period';
+COMMENT ON COLUMN shop_usage.month IS 'First day of the billing month (YYYY-MM-01)';
+COMMENT ON COLUMN shop_usage.sessions_count IS 'Number of quiz sessions started in this month';
+COMMENT ON COLUMN shop_usage.active_quizzes_count IS 'Snapshot of active quizzes count at the start of the month';
 COMMENT ON COLUMN quizzes.user_id IS 'Owner of the quiz. NULL for legacy quizzes';
 COMMENT ON COLUMN quizzes.shop_id IS 'Shopify shop that owns this quiz (NULL for standalone/native user quizzes)';
 COMMENT ON COLUMN quizzes.color_primary IS 'Primary color hex code (e.g., #FF5733)';
