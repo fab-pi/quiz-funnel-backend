@@ -575,9 +575,32 @@ router.get('/shopify/auth', async (req: Request, res: Response) => {
 
     console.log(`   🔗 Redirecting to Shopify OAuth: ${shopifyOAuthUrl.replace(/client_id=[^&]+/, 'client_id=***')}`);
     
-    // Redirect to Shopify OAuth page
-    res.redirect(shopifyOAuthUrl);
-    return; // Ensure we return after redirect
+    // Return HTML page that breaks out of iframe for OAuth
+    // Shopify's OAuth page blocks iframe embedding, so we need to redirect the top-level window
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Redirecting to Shopify...</title>
+        </head>
+        <body>
+          <script>
+            // Break out of iframe if we're embedded
+            if (window.top !== window.self) {
+              window.top.location.href = ${JSON.stringify(shopifyOAuthUrl)};
+            } else {
+              window.location.href = ${JSON.stringify(shopifyOAuthUrl)};
+            }
+          </script>
+          <noscript>
+            <meta http-equiv="refresh" content="0;url=${shopifyOAuthUrl.replace(/"/g, '&quot;')}">
+            <p>Redirecting to Shopify... <a href="${shopifyOAuthUrl.replace(/"/g, '&quot;')}">Click here</a> if you are not redirected.</p>
+          </noscript>
+        </body>
+      </html>
+    `);
+    return;
 
   } catch (error: any) {
     console.error('❌ Error initiating OAuth:', error);
