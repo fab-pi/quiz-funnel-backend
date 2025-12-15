@@ -11,7 +11,7 @@ export interface PlanFeatures {
 export interface Plan {
   id: string;
   name: string;
-  price: number; // EUR
+  price: number; // USD
   trialDays: number;
   maxSessions: number | null; // null = unlimited
   maxQuizzes: number | null; // null = unlimited
