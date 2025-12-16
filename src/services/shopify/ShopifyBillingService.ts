@@ -82,7 +82,7 @@ export class ShopifyBillingService extends BaseService {
               appRecurringPricingDetails: {
                 price: {
                   amount: plan.price,
-                  currencyCode: 'EUR',
+                  currencyCode: 'USD',
                 },
                 interval: 'EVERY_30_DAYS',
               },
