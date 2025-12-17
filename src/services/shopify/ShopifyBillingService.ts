@@ -36,7 +36,20 @@ export class ShopifyBillingService extends BaseService {
       // Check if shop already has an active subscription
       const existingSubscription = await this.getActiveSubscriptionByShopDomain(shopDomain);
       if (existingSubscription && (existingSubscription.status === 'ACTIVE' || existingSubscription.status === 'TRIAL')) {
-        throw new Error('Shop already has an active subscription. Cancel existing subscription before creating a new one.');
+        // If upgrading to a different plan, cancel the existing subscription first
+        if (existingSubscription.planId !== planId) {
+          console.log(`🔄 Upgrading from ${existingSubscription.planId} to ${planId}, canceling existing subscription...`);
+          try {
+            await this.cancelSubscription(shopDomain, existingSubscription.subscriptionGid);
+            console.log(`✅ Existing subscription canceled, proceeding with new subscription creation`);
+          } catch (cancelError: any) {
+            console.error('⚠️ Error canceling existing subscription during upgrade:', cancelError);
+            // Continue anyway - Shopify will handle the conflict
+          }
+        } else {
+          // Same plan - no need to create a new subscription
+          throw new Error('You are already subscribed to this plan.');
+        }
       }
 
       // Create GraphQL client
