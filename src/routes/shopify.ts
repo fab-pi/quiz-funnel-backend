@@ -1245,6 +1245,50 @@ router.post('/shopify/webhooks/app/uninstalled', express.raw({ type: 'applicatio
 });
 
 /**
+ * POST /api/shopify/web-vitals
+ * Receives Web Vitals metrics from frontend for performance monitoring
+ * Used to track LCP, CLS, and INP performance for Built for Shopify compliance
+ * 
+ * Metrics structure:
+ * {
+ *   appId: string,
+ *   shopId: string,
+ *   userId: string,
+ *   appLoadId: string,
+ *   metrics: Array<{ id, name, value }>,
+ *   country?: string
+ * }
+ */
+router.post('/shopify/web-vitals', express.json(), async (req: Request, res: Response) => {
+  try {
+    const metrics = req.body;
+    
+    // Log Web Vitals metrics for analysis
+    // In production, you might want to store these in a database or analytics service
+    console.log('📊 Web Vitals metrics received:', {
+      appId: metrics.appId,
+      shopId: metrics.shopId,
+      appLoadId: metrics.appLoadId,
+      country: metrics.country,
+      metrics: metrics.metrics?.map((m: any) => ({
+        name: m.name,
+        value: m.value,
+        id: m.id
+      }))
+    });
+    
+    // You can store metrics in database or send to analytics service here
+    // For now, we just log them
+    
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error('❌ Error processing Web Vitals:', error);
+    // Don't fail the request - Web Vitals monitoring should be non-blocking
+    res.status(200).json({ success: false });
+  }
+});
+
+/**
  * GET /api/shopify/proxy/:quizId
  * Shopify App Proxy endpoint
  * Handles requests from store.myshopify.com/apps/quiz/{quizId}
