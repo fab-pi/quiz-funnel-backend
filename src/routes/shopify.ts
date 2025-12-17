@@ -687,6 +687,79 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
       );
     }
 
+    /**
+     * Register app uninstall webhook: APP_UNINSTALLED
+     * Shopify docs recommend using webhookSubscriptionCreate for app webhooks.
+     * We do this here so every installed shop has the uninstall webhook configured.
+     * If this fails, we log a warning but do NOT block the OAuth flow.
+     */
+    try {
+      console.log(`🔄 Ensuring APP_UNINSTALLED webhook is registered for shop ${session.shop}...`);
+
+      const graphqlClient = await shopifyService.createGraphQLClient(session.shop);
+
+      const webhookMutation = `
+        mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+          webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+            webhookSubscription {
+              id
+              callbackUrl
+              topic
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      // Base URL for webhook callback – must be publicly accessible over HTTPS
+      const webhookBaseUrl =
+        process.env.SHOPIFY_WEBHOOK_BASE_URL ||
+        process.env.API_BASE_URL ||
+        'https://api.try-directquiz.com';
+
+      const webhookCallbackUrl = `${webhookBaseUrl.replace(/\/+$/, '')}/api/shopify/webhooks/app/uninstalled`;
+
+      const webhookVariables = {
+        topic: 'APP_UNINSTALLED',
+        webhookSubscription: {
+          callbackUrl: webhookCallbackUrl,
+          format: 'JSON' as const,
+        },
+      };
+
+      const webhookResponse = await graphqlClient.query({
+        data: {
+          query: webhookMutation,
+          variables: webhookVariables,
+        },
+      });
+
+      if (!webhookResponse || !webhookResponse.body || !webhookResponse.body.data) {
+        console.warn('⚠️ APP_UNINSTALLED webhook registration returned empty response body');
+      } else {
+        const result = webhookResponse.body.data.webhookSubscriptionCreate;
+
+        if (result.userErrors && result.userErrors.length > 0) {
+          // Common benign case: webhook already exists -> user error about duplicate subscription
+          const messages = result.userErrors.map((e: { field: string[] | null; message: string }) => e.message).join(', ');
+          console.warn(`⚠️ APP_UNINSTALLED webhook registration returned userErrors: ${messages}`);
+        } else if (result.webhookSubscription) {
+          console.log('✅ APP_UNINSTALLED webhook registered:', result.webhookSubscription);
+        } else {
+          console.warn('⚠️ APP_UNINSTALLED webhook registration returned no subscription and no errors');
+        }
+      }
+    } catch (webhookError: any) {
+      // Do not fail OAuth flow if webhook registration fails; just log for later investigation
+      console.warn(
+        `⚠️ Failed to register APP_UNINSTALLED webhook for shop ${session.shop}:`,
+        webhookError?.message || webhookError
+      );
+    }
+
     // Set any headers from callback response (if needed)
     if (callbackResponse.headers) {
       Object.entries(callbackResponse.headers).forEach(([key, value]) => {
