@@ -799,10 +799,12 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
 
       const base = webhookBaseUrl.replace(/\/+$/, '');
 
+      // Use a single callback URL for all compliance topics.
+      // Shopify CLI config uses a single `uri` for compliance topics, and Shopify sends the topic in headers.
       const topics: Array<{ topic: string; path: string }> = [
-        { topic: 'CUSTOMERS_DATA_REQUEST', path: '/api/shopify/webhooks/compliance/customers/data_request' },
-        { topic: 'CUSTOMERS_REDACT', path: '/api/shopify/webhooks/compliance/customers/redact' },
-        { topic: 'SHOP_REDACT', path: '/api/shopify/webhooks/compliance/shop/redact' },
+        { topic: 'CUSTOMERS_DATA_REQUEST', path: '/api/shopify/webhooks/compliance' },
+        { topic: 'CUSTOMERS_REDACT', path: '/api/shopify/webhooks/compliance' },
+        { topic: 'SHOP_REDACT', path: '/api/shopify/webhooks/compliance' },
       ];
 
       for (const t of topics) {
@@ -897,6 +899,43 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
  * - If invalid HMAC, return 401
  * - If valid, return 200-series
  */
+router.post(
+  '/shopify/webhooks/compliance',
+  express.raw({ type: 'application/json' }),
+  async (req: Request, res: Response) => {
+    try {
+      const shopify = shopifyService.getShopifyApi();
+
+      const isValid = await shopify.webhooks.validate({
+        rawBody: req.body,
+        rawRequest: req,
+        rawResponse: res,
+      });
+
+      if (!isValid) {
+        console.error('❌ Invalid compliance webhook signature (shared endpoint)');
+        return res.status(401).send('Invalid webhook signature');
+      }
+
+      // Shopify includes the topic in headers (canonical) for webhooks
+      const topic = (req.headers['x-shopify-topic'] as string) || '';
+
+      // Parse JSON body after validation
+      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
+
+      console.log(`✅ Compliance webhook received (shared): ${topic || 'unknown'} (shop=${shop || 'unknown'})`);
+
+      // Minimal compliant behavior: acknowledge receipt.
+      // If you later need to implement data export/redaction, dispatch based on topic here.
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error('❌ Error processing compliance webhook (shared endpoint):', error);
+      return res.status(200).json({ success: false });
+    }
+  }
+);
+
 router.post(
   '/shopify/webhooks/compliance/customers/data_request',
   express.raw({ type: 'application/json' }),
