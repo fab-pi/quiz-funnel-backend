@@ -760,6 +760,94 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
       );
     }
 
+    /**
+     * Register mandatory compliance webhooks (Privacy law compliance)
+     * Topics required for Shopify App Store submission:
+     * - customers/data_request
+     * - customers/redact
+     * - shop/redact
+     *
+     * Docs: https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
+     *
+     * If registration fails, we log a warning but do NOT block OAuth flow.
+     */
+    try {
+      console.log(`🔄 Ensuring mandatory compliance webhooks are registered for shop ${session.shop}...`);
+
+      const graphqlClient = await shopifyService.createGraphQLClient(session.shop);
+
+      const webhookMutation = `
+        mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+          webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+            webhookSubscription {
+              id
+              callbackUrl
+              topic
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const webhookBaseUrl =
+        process.env.SHOPIFY_WEBHOOK_BASE_URL ||
+        process.env.API_BASE_URL ||
+        'https://api.try-directquiz.com';
+
+      const base = webhookBaseUrl.replace(/\/+$/, '');
+
+      const topics: Array<{ topic: string; path: string }> = [
+        { topic: 'CUSTOMERS_DATA_REQUEST', path: '/api/shopify/webhooks/compliance/customers/data_request' },
+        { topic: 'CUSTOMERS_REDACT', path: '/api/shopify/webhooks/compliance/customers/redact' },
+        { topic: 'SHOP_REDACT', path: '/api/shopify/webhooks/compliance/shop/redact' },
+      ];
+
+      for (const t of topics) {
+        const webhookCallbackUrl = `${base}${t.path}`;
+
+        const webhookVariables = {
+          topic: t.topic,
+          webhookSubscription: {
+            callbackUrl: webhookCallbackUrl,
+            format: 'JSON' as const,
+          },
+        };
+
+        const webhookResponse = await graphqlClient.query({
+          data: {
+            query: webhookMutation,
+            variables: webhookVariables,
+          },
+        });
+
+        if (!webhookResponse || !webhookResponse.body || !webhookResponse.body.data) {
+          console.warn(`⚠️ ${t.topic} webhook registration returned empty response body`);
+          continue;
+        }
+
+        const result = webhookResponse.body.data.webhookSubscriptionCreate;
+
+        if (result.userErrors && result.userErrors.length > 0) {
+          const messages = result.userErrors
+            .map((e: { field: string[] | null; message: string }) => e.message)
+            .join(', ');
+          console.warn(`⚠️ ${t.topic} webhook registration returned userErrors: ${messages}`);
+        } else if (result.webhookSubscription) {
+          console.log(`✅ ${t.topic} webhook registered:`, result.webhookSubscription);
+        } else {
+          console.warn(`⚠️ ${t.topic} webhook registration returned no subscription and no errors`);
+        }
+      }
+    } catch (webhookError: any) {
+      console.warn(
+        `⚠️ Failed to register compliance webhooks for shop ${session.shop}:`,
+        webhookError?.message || webhookError
+      );
+    }
+
     // Set any headers from callback response (if needed)
     if (callbackResponse.headers) {
       Object.entries(callbackResponse.headers).forEach(([key, value]) => {
@@ -798,6 +886,113 @@ router.get('/shopify/auth/callback', async (req: Request, res: Response) => {
     res.redirect(`${appUrl}/shopify?error=oauth_failed&message=${encodeURIComponent(error.message || 'OAuth failed')}`);
   }
 });
+
+/**
+ * Mandatory privacy compliance webhooks (Shopify App Store requirement)
+ * Docs: https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
+ *
+ * Requirements:
+ * - Must accept POST with application/json
+ * - Must validate webhook HMAC
+ * - If invalid HMAC, return 401
+ * - If valid, return 200-series
+ */
+router.post(
+  '/shopify/webhooks/compliance/customers/data_request',
+  express.raw({ type: 'application/json' }),
+  async (req: Request, res: Response) => {
+    try {
+      const shopify = shopifyService.getShopifyApi();
+
+      const isValid = await shopify.webhooks.validate({
+        rawBody: req.body,
+        rawRequest: req,
+        rawResponse: res,
+      });
+
+      if (!isValid) {
+        console.error('❌ Invalid compliance webhook signature (customers/data_request)');
+        return res.status(401).send('Invalid webhook signature');
+      }
+
+      // Parse JSON body after validation
+      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
+      console.log(`✅ Compliance webhook received: customers/data_request (shop=${shop || 'unknown'})`);
+
+      // Minimal compliant behavior: acknowledge receipt.
+      // If we store customer data, implement export/response workflow separately.
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error('❌ Error processing compliance webhook customers/data_request:', error);
+      return res.status(200).json({ success: false });
+    }
+  }
+);
+
+router.post(
+  '/shopify/webhooks/compliance/customers/redact',
+  express.raw({ type: 'application/json' }),
+  async (req: Request, res: Response) => {
+    try {
+      const shopify = shopifyService.getShopifyApi();
+
+      const isValid = await shopify.webhooks.validate({
+        rawBody: req.body,
+        rawRequest: req,
+        rawResponse: res,
+      });
+
+      if (!isValid) {
+        console.error('❌ Invalid compliance webhook signature (customers/redact)');
+        return res.status(401).send('Invalid webhook signature');
+      }
+
+      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
+      console.log(`✅ Compliance webhook received: customers/redact (shop=${shop || 'unknown'})`);
+
+      // Minimal compliant behavior: acknowledge receipt.
+      // If we store customer personal data, implement deletion/anonymization separately.
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error('❌ Error processing compliance webhook customers/redact:', error);
+      return res.status(200).json({ success: false });
+    }
+  }
+);
+
+router.post(
+  '/shopify/webhooks/compliance/shop/redact',
+  express.raw({ type: 'application/json' }),
+  async (req: Request, res: Response) => {
+    try {
+      const shopify = shopifyService.getShopifyApi();
+
+      const isValid = await shopify.webhooks.validate({
+        rawBody: req.body,
+        rawRequest: req,
+        rawResponse: res,
+      });
+
+      if (!isValid) {
+        console.error('❌ Invalid compliance webhook signature (shop/redact)');
+        return res.status(401).send('Invalid webhook signature');
+      }
+
+      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
+      console.log(`✅ Compliance webhook received: shop/redact (shop=${shop || 'unknown'})`);
+
+      // Minimal compliant behavior: acknowledge receipt.
+      // If required, we can delete shop-scoped personal data here.
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error('❌ Error processing compliance webhook shop/redact:', error);
+      return res.status(200).json({ success: false });
+    }
+  }
+);
 
 /**
  * PUT /api/shopify/shop/refresh-primary-domain

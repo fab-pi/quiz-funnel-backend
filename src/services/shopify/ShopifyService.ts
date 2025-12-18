@@ -645,14 +645,12 @@ export class ShopifyService extends BaseService {
       return 0;
     });
     
-    // Build string by concatenating key=value pairs WITHOUT delimiters
-    // IMPORTANT: Decode URL-encoded values before concatenation (Shopify example shows decoded values)
-    // This matches Shopify's exact format: parameters are joined directly with no & between them
-    const queryString = paramPairs.map(pair => {
-      // Decode URL-encoded value (e.g., %2Fapps%2Fquiz becomes /apps/quiz)
-      const decodedValue = decodeURIComponent(pair.value);
-      return `${pair.key}=${decodedValue}`;
-    }).join('');
+    // Build string by concatenating key=value pairs WITHOUT delimiters.
+    // IMPORTANT: For App Proxy, Shopify signs the query string values as they appear (URL-encoded),
+    // after sorting keys, and concatenating without '&'. We must NOT decode here.
+    const queryString = paramPairs
+      .map((pair) => `${pair.key}=${pair.value}`)
+      .join('');
     
     // Calculate HMAC SHA256
     const calculatedSignature = crypto
@@ -660,11 +658,13 @@ export class ShopifyService extends BaseService {
       .update(queryString)
       .digest('hex');
     
-    // Compare signatures (use timing-safe comparison)
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(calculatedSignature),
-      Buffer.from(signature)
-    );
+    // Compare signatures safely:
+    // - timingSafeEqual throws if buffer lengths differ (would cause 500)
+    // - treat mismatched lengths as invalid signature (401/403 at caller)
+    const expectedBuf = Buffer.from(calculatedSignature, 'utf8');
+    const receivedBuf = Buffer.from(signature, 'utf8');
+    const isValid =
+      expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf);
     
     if (!isValid) {
       console.error('❌ App Proxy signature validation failed');
