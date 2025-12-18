@@ -903,20 +903,29 @@ router.post(
   '/shopify/webhooks/compliance',
   express.raw({ type: 'application/json' }),
   async (req: Request, res: Response) => {
-    try {
-      const shopify = shopifyService.getShopifyApi();
+    const shopify = shopifyService.getShopifyApi();
 
-      const isValid = await shopify.webhooks.validate({
+    // 1) Validate HMAC. Shopify requires 401 if invalid HMAC.
+    let isValid = false;
+    try {
+      const validation = await shopify.webhooks.validate({
         rawBody: req.body,
         rawRequest: req,
         rawResponse: res,
       });
+      isValid = (validation as any) === true || (validation as any)?.valid === true;
+    } catch (error: any) {
+      console.error('❌ Compliance webhook HMAC validation threw (shared endpoint):', error?.message || error);
+      return res.status(401).send('Invalid webhook signature');
+    }
 
-      if (!isValid) {
-        console.error('❌ Invalid compliance webhook signature (shared endpoint)');
-        return res.status(401).send('Invalid webhook signature');
-      }
+    if (!isValid) {
+      console.error('❌ Invalid compliance webhook signature (shared endpoint)');
+      return res.status(401).send('Invalid webhook signature');
+    }
 
+    // 2) Process payload. If processing fails, still return 200 to acknowledge receipt.
+    try {
       // Shopify includes the topic in headers (canonical) for webhooks
       const topic = (req.headers['x-shopify-topic'] as string) || '';
 
@@ -940,27 +949,32 @@ router.post(
   '/shopify/webhooks/compliance/customers/data_request',
   express.raw({ type: 'application/json' }),
   async (req: Request, res: Response) => {
-    try {
-      const shopify = shopifyService.getShopifyApi();
+    const shopify = shopifyService.getShopifyApi();
 
-      const isValid = await shopify.webhooks.validate({
+    let isValid = false;
+    try {
+      const validation = await shopify.webhooks.validate({
         rawBody: req.body,
         rawRequest: req,
         rawResponse: res,
       });
+      isValid = (validation as any) === true || (validation as any)?.valid === true;
+    } catch (error: any) {
+      console.error('❌ Compliance webhook HMAC validation threw (customers/data_request):', error?.message || error);
+      return res.status(401).send('Invalid webhook signature');
+    }
 
-      if (!isValid) {
-        console.error('❌ Invalid compliance webhook signature (customers/data_request)');
-        return res.status(401).send('Invalid webhook signature');
-      }
+    if (!isValid) {
+      console.error('❌ Invalid compliance webhook signature (customers/data_request)');
+      return res.status(401).send('Invalid webhook signature');
+    }
 
+    try {
       // Parse JSON body after validation
       const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: customers/data_request (shop=${shop || 'unknown'})`);
 
-      // Minimal compliant behavior: acknowledge receipt.
-      // If we store customer data, implement export/response workflow separately.
       return res.status(200).json({ success: true });
     } catch (error: any) {
       console.error('❌ Error processing compliance webhook customers/data_request:', error);
@@ -973,26 +987,31 @@ router.post(
   '/shopify/webhooks/compliance/customers/redact',
   express.raw({ type: 'application/json' }),
   async (req: Request, res: Response) => {
-    try {
-      const shopify = shopifyService.getShopifyApi();
+    const shopify = shopifyService.getShopifyApi();
 
-      const isValid = await shopify.webhooks.validate({
+    let isValid = false;
+    try {
+      const validation = await shopify.webhooks.validate({
         rawBody: req.body,
         rawRequest: req,
         rawResponse: res,
       });
+      isValid = (validation as any) === true || (validation as any)?.valid === true;
+    } catch (error: any) {
+      console.error('❌ Compliance webhook HMAC validation threw (customers/redact):', error?.message || error);
+      return res.status(401).send('Invalid webhook signature');
+    }
 
-      if (!isValid) {
-        console.error('❌ Invalid compliance webhook signature (customers/redact)');
-        return res.status(401).send('Invalid webhook signature');
-      }
+    if (!isValid) {
+      console.error('❌ Invalid compliance webhook signature (customers/redact)');
+      return res.status(401).send('Invalid webhook signature');
+    }
 
+    try {
       const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: customers/redact (shop=${shop || 'unknown'})`);
 
-      // Minimal compliant behavior: acknowledge receipt.
-      // If we store customer personal data, implement deletion/anonymization separately.
       return res.status(200).json({ success: true });
     } catch (error: any) {
       console.error('❌ Error processing compliance webhook customers/redact:', error);
@@ -1005,26 +1024,31 @@ router.post(
   '/shopify/webhooks/compliance/shop/redact',
   express.raw({ type: 'application/json' }),
   async (req: Request, res: Response) => {
-    try {
-      const shopify = shopifyService.getShopifyApi();
+    const shopify = shopifyService.getShopifyApi();
 
-      const isValid = await shopify.webhooks.validate({
+    let isValid = false;
+    try {
+      const validation = await shopify.webhooks.validate({
         rawBody: req.body,
         rawRequest: req,
         rawResponse: res,
       });
+      isValid = (validation as any) === true || (validation as any)?.valid === true;
+    } catch (error: any) {
+      console.error('❌ Compliance webhook HMAC validation threw (shop/redact):', error?.message || error);
+      return res.status(401).send('Invalid webhook signature');
+    }
 
-      if (!isValid) {
-        console.error('❌ Invalid compliance webhook signature (shop/redact)');
-        return res.status(401).send('Invalid webhook signature');
-      }
+    if (!isValid) {
+      console.error('❌ Invalid compliance webhook signature (shop/redact)');
+      return res.status(401).send('Invalid webhook signature');
+    }
 
+    try {
       const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: shop/redact (shop=${shop || 'unknown'})`);
 
-      // Minimal compliant behavior: acknowledge receipt.
-      // If required, we can delete shop-scoped personal data here.
       return res.status(200).json({ success: true });
     } catch (error: any) {
       console.error('❌ Error processing compliance webhook shop/redact:', error);
