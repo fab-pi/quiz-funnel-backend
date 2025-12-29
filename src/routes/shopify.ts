@@ -1182,8 +1182,26 @@ router.get('/shopify/subscription/status', shopifyAuthenticate, async (req: Shop
       });
     }
 
-    // Get active subscription
-    const subscription = await shopifyBillingService.getActiveSubscriptionByShopDomain(shopDomain);
+    // Get subscription from database (any status, including PENDING)
+    let subscription = await shopifyBillingService.getSubscriptionByShopDomain(shopDomain);
+    
+    // If subscription is PENDING, sync status from Shopify to get real-time status
+    // This handles the race condition where merchant approves but webhook hasn't arrived yet
+    if (subscription && subscription.status === 'PENDING') {
+      console.log(`🔄 Subscription status is PENDING for shop ${shopDomain}, syncing from Shopify...`);
+      const syncedSubscription = await shopifyBillingService.syncSubscriptionStatusFromShopify(shopDomain);
+      if (syncedSubscription) {
+        // Shopify has active subscription - use synced status
+        subscription = syncedSubscription;
+      }
+      // If sync returns null, Shopify doesn't have active subscription yet, keep PENDING status from DB
+    }
+    
+    // If still no subscription found, try syncing from Shopify (might be a new subscription not yet in DB)
+    if (!subscription) {
+      console.log(`ℹ️ No subscription found in DB for shop ${shopDomain}, checking Shopify...`);
+      subscription = await shopifyBillingService.syncSubscriptionStatusFromShopify(shopDomain);
+    }
     
     // Get current month usage
     const client = await pool.connect();
