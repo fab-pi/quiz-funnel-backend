@@ -411,18 +411,6 @@ export class ShopifyBillingService extends BaseService {
               currentPeriodEnd
               trialDays
               createdAt
-              lineItems {
-                id
-                plan {
-                  ... on AppRecurringPricing {
-                    price {
-                      amount
-                      currencyCode
-                    }
-                    interval
-                  }
-                }
-              }
             }
           }
         }
@@ -436,23 +424,13 @@ export class ShopifyBillingService extends BaseService {
         body: {
           data: {
             currentAppInstallation: {
-              activeSubscriptions: Array<{
-                id: string;
-                status: string;
-                currentPeriodEnd: string | null;
-                trialDays: number;
-                createdAt: string;
-                lineItems: Array<{
-                  id: string;
-                  plan: {
-                    price: {
-                      amount: number;
-                      currencyCode: string;
-                    };
-                    interval: string;
-                  };
-                }>;
-              }>;
+            activeSubscriptions: Array<{
+              id: string;
+              status: string;
+              currentPeriodEnd: string | null;
+              trialDays: number;
+              createdAt: string;
+            }>;
             } | null;
           };
         };
@@ -493,15 +471,12 @@ export class ShopifyBillingService extends BaseService {
 
       let planId: string;
       if (existingResult.rows.length > 0) {
-        // Use existing plan_id
+        // Use existing plan_id from DB
         planId = existingResult.rows[0].plan_id;
       } else {
-        // Try to determine plan_id from price (fallback)
-        const price = activeSubscription.lineItems[0]?.plan?.price?.amount || 0;
-        const { PLANS } = await import('../../config/plans');
-        const matchingPlan = PLANS.find(p => Math.abs(p.price - price) < 0.01);
-        planId = matchingPlan?.id || 'starter'; // Default to starter if can't determine
-        console.log(`⚠️ Subscription ${subscriptionGid} not found in DB, inferring plan_id: ${planId} from price ${price}`);
+        // Subscription not found in DB - this shouldn't happen, but default to starter
+        planId = 'starter';
+        console.log(`⚠️ Subscription ${subscriptionGid} not found in DB, using default plan_id: ${planId}`);
       }
 
       // Update or insert subscription in database
