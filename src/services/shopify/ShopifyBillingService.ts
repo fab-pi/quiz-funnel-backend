@@ -312,6 +312,63 @@ export class ShopifyBillingService extends BaseService {
   }
 
   /**
+   * Cancel all active subscriptions for a shop (used when app is uninstalled)
+   * Shopify automatically cancels subscriptions when app is uninstalled,
+   * but we need to update our database to reflect this
+   * @param shopDomain - Shop domain
+   */
+  async cancelAllActiveSubscriptions(shopDomain: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      // Get shop_id
+      const shopResult = await client.query(
+        'SELECT shop_id FROM shops WHERE shop_domain = $1',
+        [shopDomain]
+      );
+
+      if (shopResult.rows.length === 0) {
+        console.log(`ℹ️ Shop not found: ${shopDomain}, skipping subscription cancellation`);
+        return;
+      }
+
+      const shopId = shopResult.rows[0].shop_id;
+
+      // Find all active subscriptions (ACTIVE or TRIAL)
+      const subscriptionsResult = await client.query<ShopSubscriptionDatabaseRow>(
+        `SELECT * FROM shop_subscriptions 
+         WHERE shop_id = $1 
+         AND status IN ('ACTIVE', 'TRIAL')`,
+        [shopId]
+      );
+
+      if (subscriptionsResult.rows.length === 0) {
+        console.log(`ℹ️ No active subscriptions found for shop ${shopDomain}`);
+        return;
+      }
+
+      console.log(`🔄 Cancelling ${subscriptionsResult.rows.length} active subscription(s) for shop ${shopDomain}...`);
+
+      // Update all active subscriptions to CANCELLED
+      // Note: We don't call Shopify API here because Shopify already cancelled them automatically
+      // We just need to sync our database
+      await client.query(
+        `UPDATE shop_subscriptions 
+         SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP 
+         WHERE shop_id = $1 
+         AND status IN ('ACTIVE', 'TRIAL')`,
+        [shopId]
+      );
+
+      console.log(`✅ Cancelled ${subscriptionsResult.rows.length} subscription(s) for shop ${shopDomain}`);
+    } catch (error: any) {
+      console.error(`❌ Error cancelling subscriptions for shop ${shopDomain}:`, error);
+      // Don't throw - we don't want to block the uninstall process
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Get active subscription for a shop
    * @param shopDomain - Shop domain
    * @returns Active subscription or null

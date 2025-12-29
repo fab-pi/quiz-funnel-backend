@@ -1597,6 +1597,14 @@ router.post('/shopify/webhooks/app/uninstalled', express.raw({ type: 'applicatio
 
     console.log(`🔄 Processing uninstall webhook for shop: ${shop}`);
 
+    // Cancel all active subscriptions (Shopify cancels them automatically, but we need to update our DB)
+    try {
+      await shopifyBillingService.cancelAllActiveSubscriptions(shop);
+    } catch (error: any) {
+      console.error(`⚠️ Error cancelling subscriptions during uninstall (non-critical):`, error);
+      // Continue with uninstall even if subscription cancellation fails
+    }
+
     // Mark shop as uninstalled
     await shopifyService.uninstallShop(shop);
 
