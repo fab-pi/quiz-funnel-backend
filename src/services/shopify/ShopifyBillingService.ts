@@ -52,6 +52,30 @@ export class ShopifyBillingService extends BaseService {
         }
       }
 
+      // Check if shop has ever had a subscription (excluding PENDING) to determine trial eligibility
+      // If a shop has already had a subscription (ACTIVE, TRIAL, CANCELLED, EXPIRED), they don't get trial again
+      const shopResult = await client.query('SELECT shop_id FROM shops WHERE shop_domain = $1', [shopDomain]);
+      if (shopResult.rows.length === 0) {
+        throw new Error(`Shop not found: ${shopDomain}`);
+      }
+      const shopId = shopResult.rows[0].shop_id;
+
+      const previousSubscriptionResult = await client.query(
+        `SELECT COUNT(*) as count FROM shop_subscriptions 
+         WHERE shop_id = $1 
+         AND status IN ('ACTIVE', 'TRIAL', 'CANCELLED', 'EXPIRED')`,
+        [shopId]
+      );
+
+      const hasPreviousSubscription = parseInt(previousSubscriptionResult.rows[0]?.count || '0') > 0;
+      const trialDays = hasPreviousSubscription ? 0 : plan.trialDays;
+
+      if (hasPreviousSubscription) {
+        console.log(`ℹ️ Shop ${shopDomain} has previous subscription history, trial disabled`);
+      } else {
+        console.log(`ℹ️ Shop ${shopDomain} is new, trial enabled (${trialDays} days)`);
+      }
+
       // Create GraphQL client
       const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain);
 
@@ -86,7 +110,7 @@ export class ShopifyBillingService extends BaseService {
 
       const variables = {
         name: `${plan.name} Plan`,
-        trialDays: plan.trialDays,
+        trialDays: trialDays,
         returnUrl: returnUrl,
         test: true, //process.env.NODE_ENV !== 'production',
         lineItems: [
@@ -150,17 +174,18 @@ export class ShopifyBillingService extends BaseService {
         ? new Date(result.appSubscription.currentPeriodEnd)
         : null;
 
+      // Get actual trialDays from Shopify response (may differ from requested)
+      const actualTrialDays = result.appSubscription.trialDays || 0;
+
       // Calculate trial end date
-      const trialEndsAt = result.appSubscription.trialDays
-        ? new Date(Date.now() + result.appSubscription.trialDays * 24 * 60 * 60 * 1000)
+      const trialEndsAt = actualTrialDays > 0
+        ? new Date(Date.now() + actualTrialDays * 24 * 60 * 60 * 1000)
         : null;
 
-      // Get shop_id from database
-      const shopResult = await client.query('SELECT shop_id FROM shops WHERE shop_domain = $1', [shopDomain]);
-      if (shopResult.rows.length === 0) {
-        throw new Error(`Shop not found: ${shopDomain}`);
-      }
-      const shopId = shopResult.rows[0].shop_id;
+      // Determine if subscription is in trial (trialDays > 0 and trial hasn't ended)
+      const isTrial = actualTrialDays > 0 && trialEndsAt && new Date() < trialEndsAt;
+
+      // shopId was already retrieved earlier in the function
 
       // Store subscription in database (status will be updated via webhook when approved)
       await client.query(
@@ -180,9 +205,9 @@ export class ShopifyBillingService extends BaseService {
           planId,
           subscriptionGid,
           status,
-          plan.trialDays,
+          actualTrialDays,
           trialEndsAt,
-          true, // is_trial
+          isTrial,
           currentPeriodEnd,
         ]
       );
