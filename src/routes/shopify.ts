@@ -1203,18 +1203,56 @@ router.get('/shopify/subscription/status', shopifyAuthenticate, async (req: Shop
       subscription = await shopifyBillingService.syncSubscriptionStatusFromShopify(shopDomain);
     }
     
-    // Get current month usage
+    // Get current billing period usage
     const client = await pool.connect();
     try {
-      const currentMonth = new Date();
-      currentMonth.setDate(1); // First day of month
+      // Calculate billing period month based on subscription
+      let billingPeriodMonth: Date;
+      if (subscription && subscription.currentPeriodEnd) {
+        // Calculate current billing period start
+        const periodEnd = new Date(subscription.currentPeriodEnd);
+        const periodStart = new Date(periodEnd);
+        periodStart.setDate(periodStart.getDate() - 30); // Billing period is 30 days
+        periodStart.setHours(0, 0, 0, 0);
+        
+        const now = new Date();
+        if (now >= periodStart && now <= periodEnd) {
+          // We're in the current period
+          billingPeriodMonth = new Date(periodStart);
+          billingPeriodMonth.setDate(1);
+        } else {
+          // We're in the next period (after current_period_end)
+          const nextPeriodStart = new Date(periodEnd);
+          nextPeriodStart.setDate(nextPeriodStart.getDate() + 1);
+          nextPeriodStart.setHours(0, 0, 0, 0);
+          billingPeriodMonth = new Date(nextPeriodStart);
+          billingPeriodMonth.setDate(1);
+        }
+      } else if (subscription) {
+        // No current_period_end, use created_at as starting point
+        const createdAt = new Date(subscription.createdAt);
+        createdAt.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+        const periodsSinceCreation = Math.floor(daysSinceCreation / 30);
+        const currentPeriodStart = new Date(createdAt);
+        currentPeriodStart.setDate(currentPeriodStart.getDate() + (periodsSinceCreation * 30));
+        currentPeriodStart.setHours(0, 0, 0, 0);
+        billingPeriodMonth = new Date(currentPeriodStart);
+        billingPeriodMonth.setDate(1);
+      } else {
+        // No subscription, use calendar month as fallback
+        billingPeriodMonth = new Date();
+        billingPeriodMonth.setDate(1);
+        billingPeriodMonth.setHours(0, 0, 0, 0);
+      }
       
       const usageResult = await client.query(
         `SELECT sessions_count, active_quizzes_count 
          FROM shop_usage 
          WHERE shop_id = (SELECT shop_id FROM shops WHERE shop_domain = $1)
          AND month = $2`,
-        [shopDomain, currentMonth]
+        [shopDomain, billingPeriodMonth]
       );
 
       const usage = usageResult.rows[0] || { sessions_count: 0, active_quizzes_count: 0 };
