@@ -60,6 +60,22 @@ export class ShopifyBillingService extends BaseService {
       }
       const shopId = shopResult.rows[0].shop_id;
 
+      // Clean up any existing PENDING subscriptions for this shop before creating a new one
+      // This prevents accumulation of PENDING records when users cancel approval and try again
+      try {
+        const deleteResult = await client.query(
+          `DELETE FROM shop_subscriptions 
+           WHERE shop_id = $1 AND status = 'PENDING'`,
+          [shopId]
+        );
+        if (deleteResult.rowCount && deleteResult.rowCount > 0) {
+          console.log(`🧹 Cleaned up ${deleteResult.rowCount} PENDING subscription(s) for shop ${shopDomain} before creating new one`);
+        }
+      } catch (cleanupError: any) {
+        // Log error but continue - we don't want to block subscription creation if cleanup fails
+        console.error(`⚠️ Error cleaning up PENDING subscriptions for shop ${shopDomain}:`, cleanupError);
+      }
+
       const previousSubscriptionResult = await client.query(
         `SELECT COUNT(*) as count FROM shop_subscriptions 
          WHERE shop_id = $1 
