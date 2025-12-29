@@ -1269,13 +1269,18 @@ router.get('/shopify/subscription/status', shopifyAuthenticate, async (req: Shop
 
       // Get plan details
       const { PLANS, getPlanById } = await import('../config/plans');
-      const plan = subscription ? getPlanById(subscription.planId) : null;
+      
+      // Only return planId and planName if subscription is ACTIVE or TRIAL
+      // If subscription is CANCELLED, EXPIRED, or PENDING, treat as no active subscription
+      const isActiveSubscription = subscription && 
+                                  (subscription.status === 'ACTIVE' || subscription.status === 'TRIAL');
+      const plan = isActiveSubscription && subscription ? getPlanById(subscription.planId) : null;
 
       res.json({
         success: true,
         data: {
-          planId: subscription?.planId || null,
-          planName: plan?.name || null,
+          planId: isActiveSubscription ? (subscription?.planId || null) : null,
+          planName: isActiveSubscription ? (plan?.name || null) : null,
           status: subscription?.status || null,
           trialEndsAt: subscription?.trialEndsAt || null,
           isTrial: subscription?.isTrial || false,
