@@ -1502,24 +1502,49 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
 
     // Parse JSON body after validation
     let payload;
-    if (typeof req.body === 'string') {
-      payload = JSON.parse(req.body);
-    } else if (Buffer.isBuffer(req.body)) {
-      payload = JSON.parse(req.body.toString('utf8'));
-    } else if (typeof req.body === 'object' && req.body !== null) {
-      // Already parsed (shouldn't happen with express.raw(), but handle it)
-      payload = req.body;
-    } else {
-      throw new Error('Invalid request body type');
+    try {
+      if (typeof req.body === 'string') {
+        payload = JSON.parse(req.body);
+      } else if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString('utf8'));
+      } else if (typeof req.body === 'object' && req.body !== null) {
+        // Already parsed (shouldn't happen with express.raw(), but handle it)
+        payload = req.body;
+      } else {
+        throw new Error('Invalid request body type');
+      }
+    } catch (parseError: any) {
+      console.error('❌ Error parsing webhook payload:', parseError);
+      console.error('   Body type:', typeof req.body);
+      console.error('   Body preview:', Buffer.isBuffer(req.body) ? req.body.toString('utf8').substring(0, 200) : String(req.body).substring(0, 200));
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid JSON payload'
+      });
     }
 
     console.log(`🔄 Processing subscription update webhook for shop: ${shop}`);
+    console.log(`📦 Webhook payload keys:`, Object.keys(payload || {}));
+    console.log(`📦 Webhook payload structure:`, JSON.stringify(payload, null, 2).substring(0, 500));
 
     const appSubscription = payload.app_subscription;
-    if (!appSubscription || !appSubscription.id) {
+    if (!appSubscription) {
+      console.error('❌ Missing app_subscription in payload');
+      console.error('   Payload keys:', Object.keys(payload || {}));
+      console.error('   Full payload:', JSON.stringify(payload, null, 2));
       return res.status(400).json({
         success: false,
         message: 'Missing app_subscription data'
+      });
+    }
+
+    if (!appSubscription.id) {
+      console.error('❌ Missing app_subscription.id in payload');
+      console.error('   app_subscription keys:', Object.keys(appSubscription || {}));
+      console.error('   app_subscription:', JSON.stringify(appSubscription, null, 2));
+      return res.status(400).json({
+        success: false,
+        message: 'Missing app_subscription.id'
       });
     }
 
