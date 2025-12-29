@@ -1362,7 +1362,7 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
     }
 
     // Parse JSON body after validation
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
 
     console.log(`🔄 Processing subscription update webhook for shop: ${shop}`);
 
@@ -1466,7 +1466,7 @@ router.post('/shopify/webhooks/app/uninstalled', express.raw({ type: 'applicatio
     }
 
     // Parse JSON body after validation
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
     const shop = req.get('X-Shopify-Shop-Domain') || payload?.shop?.myshopifyDomain;
 
     if (!shop) {
