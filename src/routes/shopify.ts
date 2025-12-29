@@ -1571,6 +1571,46 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
       console.log(`✅ Subscription updated for shop ${shop}: ${subscriptionGid}`);
       console.log(`   Status: ${status}, Trial: ${isTrial}, Period End: ${currentPeriodEnd}`);
 
+      // If this subscription just became ACTIVE, cancel any other ACTIVE subscriptions for this shop
+      // This handles the upgrade scenario where a new subscription is approved
+      if (status === 'ACTIVE') {
+        try {
+          const otherActiveSubscriptions = await client.query(
+            `SELECT subscription_gid FROM shop_subscriptions 
+             WHERE shop_id = $1 
+             AND status IN ('ACTIVE', 'TRIAL')
+             AND subscription_gid != $2`,
+            [shopId, subscriptionGid]
+          );
+
+          if (otherActiveSubscriptions.rows.length > 0) {
+            console.log(`🔄 New subscription activated, cancelling ${otherActiveSubscriptions.rows.length} old subscription(s)...`);
+            
+            for (const row of otherActiveSubscriptions.rows) {
+              const oldSubscriptionGid = row.subscription_gid;
+              try {
+                // Cancel via Shopify API
+                await shopifyBillingService.cancelSubscription(shop, oldSubscriptionGid);
+                console.log(`✅ Old subscription cancelled: ${oldSubscriptionGid}`);
+              } catch (cancelError: any) {
+                console.error(`⚠️ Error cancelling old subscription ${oldSubscriptionGid}:`, cancelError);
+                // Continue with other subscriptions even if one fails
+                // Also update DB directly as fallback
+                await client.query(
+                  `UPDATE shop_subscriptions 
+                   SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP 
+                   WHERE subscription_gid = $1`,
+                  [oldSubscriptionGid]
+                );
+              }
+            }
+          }
+        } catch (cleanupError: any) {
+          // Log error but don't fail the webhook - the new subscription is already ACTIVE
+          console.error(`⚠️ Error cleaning up old subscriptions for shop ${shop}:`, cleanupError);
+        }
+      }
+
       res.status(200).json({
         success: true,
         message: 'Webhook processed successfully'
