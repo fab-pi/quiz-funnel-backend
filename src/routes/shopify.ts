@@ -1538,29 +1538,25 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
       });
     }
 
-    if (!appSubscription.id) {
-      console.error('❌ Missing app_subscription.id in payload');
+    // Shopify webhook uses admin_graphql_api_id instead of id
+    const subscriptionGid = appSubscription.admin_graphql_api_id || appSubscription.id;
+    if (!subscriptionGid) {
+      console.error('❌ Missing app_subscription.admin_graphql_api_id or id in payload');
       console.error('   app_subscription keys:', Object.keys(appSubscription || {}));
       console.error('   app_subscription:', JSON.stringify(appSubscription, null, 2));
       return res.status(400).json({
         success: false,
-        message: 'Missing app_subscription.id'
+        message: 'Missing app_subscription.admin_graphql_api_id or id'
       });
     }
 
-    const subscriptionGid = appSubscription.id;
-    const status = appSubscription.status; // ACTIVE, CANCELLED, EXPIRED, etc.
+    const status = appSubscription.status; // ACTIVE, CANCELLED, EXPIRED, DECLINED, etc.
+    
+    // Note: Shopify webhook payload doesn't include current_period_end, trial_days, trial_ends_at, or is_trial
+    // We only update the status from the webhook, other fields remain unchanged in the database
     const currentPeriodEnd = appSubscription.current_period_end 
       ? new Date(appSubscription.current_period_end) 
       : null;
-    const trialDays = appSubscription.trial_days || 0;
-    
-    // Calculate trial end date
-    const trialEndsAt = trialDays > 0 && appSubscription.created_at
-      ? new Date(new Date(appSubscription.created_at).getTime() + trialDays * 24 * 60 * 60 * 1000)
-      : null;
-    
-    const isTrial = trialDays > 0 && trialEndsAt && new Date() < trialEndsAt;
 
     // Get shop_id from database
     const client = await pool.connect();
@@ -1581,20 +1577,29 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
       const shopId = shopResult.rows[0].shop_id;
 
       // Update subscription in database
+      // Note: Shopify webhook payload only includes: admin_graphql_api_id, name, status, created_at, updated_at, currency, price, interval
+      // It does NOT include: current_period_end, trial_days, trial_ends_at, is_trial
+      // We only update the status from the webhook, other fields remain unchanged
       await client.query(
         `UPDATE shop_subscriptions 
          SET status = $1,
-             trial_days = $2,
-             trial_ends_at = $3,
-             is_trial = $4,
-             current_period_end = $5,
              updated_at = CURRENT_TIMESTAMP
-         WHERE subscription_gid = $6`,
-        [status, trialDays, trialEndsAt, isTrial, currentPeriodEnd, subscriptionGid]
+         WHERE subscription_gid = $2`,
+        [status, subscriptionGid]
       );
 
+      // If current_period_end is provided in webhook, update it (though it's usually not in the payload)
+      if (currentPeriodEnd) {
+        await client.query(
+          `UPDATE shop_subscriptions 
+           SET current_period_end = $1
+           WHERE subscription_gid = $2`,
+          [currentPeriodEnd, subscriptionGid]
+        );
+      }
+
       console.log(`✅ Subscription updated for shop ${shop}: ${subscriptionGid}`);
-      console.log(`   Status: ${status}, Trial: ${isTrial}, Period End: ${currentPeriodEnd}`);
+      console.log(`   Status: ${status}`);
 
       // If this subscription just became ACTIVE, cancel any other ACTIVE subscriptions for this shop
       // This handles the upgrade scenario where a new subscription is approved
