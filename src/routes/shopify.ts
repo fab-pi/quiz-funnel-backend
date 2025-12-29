@@ -930,7 +930,17 @@ router.post(
       const topic = (req.headers['x-shopify-topic'] as string) || '';
 
       // Parse JSON body after validation
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      let payload;
+      if (typeof req.body === 'string') {
+        payload = JSON.parse(req.body);
+      } else if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString('utf8'));
+      } else if (typeof req.body === 'object' && req.body !== null) {
+        // Already parsed (shouldn't happen with express.raw(), but handle it)
+        payload = req.body;
+      } else {
+        throw new Error('Invalid request body type');
+      }
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
 
       console.log(`✅ Compliance webhook received (shared): ${topic || 'unknown'} (shop=${shop || 'unknown'})`);
@@ -971,7 +981,17 @@ router.post(
 
     try {
       // Parse JSON body after validation
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      let payload;
+      if (typeof req.body === 'string') {
+        payload = JSON.parse(req.body);
+      } else if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString('utf8'));
+      } else if (typeof req.body === 'object' && req.body !== null) {
+        // Already parsed (shouldn't happen with express.raw(), but handle it)
+        payload = req.body;
+      } else {
+        throw new Error('Invalid request body type');
+      }
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: customers/data_request (shop=${shop || 'unknown'})`);
 
@@ -1008,7 +1028,18 @@ router.post(
     }
 
     try {
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      // Parse JSON body after validation
+      let payload;
+      if (typeof req.body === 'string') {
+        payload = JSON.parse(req.body);
+      } else if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString('utf8'));
+      } else if (typeof req.body === 'object' && req.body !== null) {
+        // Already parsed (shouldn't happen with express.raw(), but handle it)
+        payload = req.body;
+      } else {
+        throw new Error('Invalid request body type');
+      }
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: customers/redact (shop=${shop || 'unknown'})`);
 
@@ -1045,7 +1076,18 @@ router.post(
     }
 
     try {
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+      // Parse JSON body after validation
+      let payload;
+      if (typeof req.body === 'string') {
+        payload = JSON.parse(req.body);
+      } else if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString('utf8'));
+      } else if (typeof req.body === 'object' && req.body !== null) {
+        // Already parsed (shouldn't happen with express.raw(), but handle it)
+        payload = req.body;
+      } else {
+        throw new Error('Invalid request body type');
+      }
       const shop = (req.headers['x-shopify-shop-domain'] as string) || payload?.shop_domain;
       console.log(`✅ Compliance webhook received: shop/redact (shop=${shop || 'unknown'})`);
 
@@ -1362,7 +1404,17 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
     }
 
     // Parse JSON body after validation
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+    let payload;
+    if (typeof req.body === 'string') {
+      payload = JSON.parse(req.body);
+    } else if (Buffer.isBuffer(req.body)) {
+      payload = JSON.parse(req.body.toString('utf8'));
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      // Already parsed (shouldn't happen with express.raw(), but handle it)
+      payload = req.body;
+    } else {
+      throw new Error('Invalid request body type');
+    }
 
     console.log(`🔄 Processing subscription update webhook for shop: ${shop}`);
 
@@ -1466,7 +1518,17 @@ router.post('/shopify/webhooks/app/uninstalled', express.raw({ type: 'applicatio
     }
 
     // Parse JSON body after validation
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : JSON.parse(req.body.toString('utf8'));
+    let payload;
+    if (typeof req.body === 'string') {
+      payload = JSON.parse(req.body);
+    } else if (Buffer.isBuffer(req.body)) {
+      payload = JSON.parse(req.body.toString('utf8'));
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      // Already parsed (shouldn't happen with express.raw(), but handle it)
+      payload = req.body;
+    } else {
+      throw new Error('Invalid request body type');
+    }
     const shop = req.get('X-Shopify-Shop-Domain') || payload?.shop?.myshopifyDomain;
 
     if (!shop) {
