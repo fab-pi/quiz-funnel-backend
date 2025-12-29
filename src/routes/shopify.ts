@@ -1142,21 +1142,57 @@ router.put('/shopify/shop/refresh-primary-domain', shopifyAuthenticate, async (r
  * Get available subscription plans
  * Public endpoint (no auth required for viewing plans)
  */
-router.get('/shopify/plans', async (req: Request, res: Response) => {
+router.get('/shopify/plans', shopifyAuthenticate, async (req: ShopifyRequest, res: Response) => {
   try {
+    const shopDomain = req.shop;
+    if (!shopDomain) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop domain is required'
+      });
+    }
+
     const { PLANS } = await import('../config/plans');
+    
+    // Check if shop has had previous subscriptions (excluding PENDING)
+    const client = await pool.connect();
+    let hasPreviousSubscription = false;
+    try {
+      const shopResult = await client.query(
+        'SELECT shop_id FROM shops WHERE shop_domain = $1',
+        [shopDomain]
+      );
+      
+      if (shopResult.rows.length > 0) {
+        const shopId = shopResult.rows[0].shop_id;
+        const previousSubscriptionsResult = await client.query(
+          `SELECT COUNT(*) FROM shop_subscriptions 
+           WHERE shop_id = $1 AND status IN ('ACTIVE', 'TRIAL', 'CANCELLED', 'EXPIRED')`,
+          [shopId]
+        );
+        hasPreviousSubscription = previousSubscriptionsResult.rows[0].count > 0;
+      }
+    } catch (error) {
+      console.error('❌ Error checking previous subscriptions:', error);
+      // Continue anyway - default to showing trial
+    } finally {
+      client.release();
+    }
     
     res.json({
       success: true,
-      data: PLANS.map(plan => ({
-        id: plan.id,
-        name: plan.name,
-        price: plan.price,
-        trialDays: plan.trialDays,
-        maxSessions: plan.maxSessions,
-        maxQuizzes: plan.maxQuizzes,
-        features: plan.features
-      }))
+      data: {
+        plans: PLANS.map(plan => ({
+          id: plan.id,
+          name: plan.name,
+          price: plan.price,
+          trialDays: plan.trialDays,
+          maxSessions: plan.maxSessions,
+          maxQuizzes: plan.maxQuizzes,
+          features: plan.features
+        })),
+        hasPreviousSubscription
+      }
     });
   } catch (error: any) {
     console.error('❌ Error fetching plans:', error);
