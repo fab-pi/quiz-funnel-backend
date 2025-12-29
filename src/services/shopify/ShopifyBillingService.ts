@@ -556,6 +556,15 @@ export class ShopifyBillingService extends BaseService {
    * Map database row to ShopSubscription interface
    */
   private mapSubscriptionFromDatabase(row: ShopSubscriptionDatabaseRow): ShopSubscription {
+    // Calculate isTrial correctly: check if trial_ends_at is in the future
+    // This handles the case where is_trial is TRUE in DB but trial has actually ended
+    // If webhook didn't arrive when trial ended, is_trial might still be TRUE
+    const isTrial = Boolean(
+      row.is_trial && 
+      row.trial_ends_at && 
+      new Date(row.trial_ends_at) > new Date()
+    );
+
     return {
       subscriptionId: row.subscription_id,
       shopId: row.shop_id,
@@ -564,7 +573,7 @@ export class ShopifyBillingService extends BaseService {
       status: row.status,
       trialDays: row.trial_days,
       trialEndsAt: row.trial_ends_at,
-      isTrial: row.is_trial,
+      isTrial: isTrial,
       currentPeriodEnd: row.current_period_end,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
