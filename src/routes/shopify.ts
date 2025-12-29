@@ -1601,6 +1601,37 @@ router.post('/shopify/webhooks/app_subscriptions/update', express.raw({ type: 'a
       console.log(`✅ Subscription updated for shop ${shop}: ${subscriptionGid}`);
       console.log(`   Status: ${status}`);
 
+      // Handle CANCELLED status: check if this was cancelled automatically by Shopify
+      // when a new subscription was created. If there's still an active subscription in Shopify,
+      // don't update this one to CANCELLED (Shopify cancelled it automatically when creating the new one)
+      if (status === 'CANCELLED') {
+        try {
+          console.log(`⚠️ Subscription ${subscriptionGid} was cancelled. Checking if there's still an active subscription in Shopify...`);
+          
+          // Verify with Shopify if there's still an active subscription
+          // This handles the case where Shopify automatically cancels the old subscription
+          // when a new one is created (even if the new one is later declined)
+          const activeSubscription = await shopifyBillingService.syncSubscriptionStatusFromShopify(shop);
+          if (activeSubscription && (activeSubscription.status === 'ACTIVE' || activeSubscription.status === 'TRIAL')) {
+            console.log(`✅ Found active subscription in Shopify: ${activeSubscription.subscriptionGid}`);
+            console.log(`   Shopify cancelled subscription ${subscriptionGid} automatically when creating the new one`);
+            console.log(`   Not updating cancelled subscription - the active one will be the source of truth`);
+            // Don't update to CANCELLED - the active subscription will be handled separately
+            // This prevents losing access when Shopify cancels the old subscription but the new one is declined
+            return res.status(200).json({
+              success: true,
+              message: 'Webhook processed - active subscription found, not updating cancelled one'
+            });
+          } else {
+            console.log(`ℹ️ No active subscription found in Shopify. This cancellation is legitimate.`);
+            // Continue with normal CANCELLED update below
+          }
+        } catch (syncError: any) {
+          console.error(`⚠️ Error syncing subscription status from Shopify:`, syncError);
+          // Continue with normal CANCELLED update if sync fails
+        }
+      }
+
       // If this subscription just became ACTIVE, cancel any other ACTIVE subscriptions for this shop
       // This handles the upgrade scenario where a new subscription is approved
       if (status === 'ACTIVE') {

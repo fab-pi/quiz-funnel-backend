@@ -442,20 +442,35 @@ export class ShopifyBillingService extends BaseService {
 
   /**
    * Get any subscription (including PENDING) for a shop
+   * Prioritizes ACTIVE/TRIAL subscriptions, then returns most recent if none found
    * @param shopDomain - Shop domain
    * @returns Subscription or null
    */
   async getSubscriptionByShopDomain(shopDomain: string): Promise<ShopSubscription | null> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query<ShopSubscriptionDatabaseRow>(
+      // First, try to get an ACTIVE or TRIAL subscription (prioritize active subscriptions)
+      let result = await client.query<ShopSubscriptionDatabaseRow>(
         `SELECT s.* FROM shop_subscriptions s
          JOIN shops sh ON s.shop_id = sh.shop_id
          WHERE sh.shop_domain = $1 
+         AND s.status IN ('ACTIVE', 'TRIAL')
          ORDER BY s.created_at DESC
          LIMIT 1`,
         [shopDomain]
       );
+
+      // If no active subscription found, get the most recent one (any status)
+      if (result.rows.length === 0) {
+        result = await client.query<ShopSubscriptionDatabaseRow>(
+          `SELECT s.* FROM shop_subscriptions s
+           JOIN shops sh ON s.shop_id = sh.shop_id
+           WHERE sh.shop_domain = $1 
+           ORDER BY s.created_at DESC
+           LIMIT 1`,
+          [shopDomain]
+        );
+      }
 
       if (result.rows.length === 0) {
         return null;
