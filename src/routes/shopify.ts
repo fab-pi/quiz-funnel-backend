@@ -1154,31 +1154,8 @@ router.get('/shopify/plans', shopifyAuthenticate, async (req: ShopifyRequest, re
 
     const { PLANS } = await import('../config/plans');
     
-    // Check if shop has had previous subscriptions (excluding PENDING)
-    const client = await pool.connect();
-    let hasPreviousSubscription = false;
-    try {
-      const shopResult = await client.query(
-        'SELECT shop_id FROM shops WHERE shop_domain = $1',
-        [shopDomain]
-      );
-      
-      if (shopResult.rows.length > 0) {
-        const shopId = shopResult.rows[0].shop_id;
-        const previousSubscriptionsResult = await client.query(
-          `SELECT COUNT(*) FROM shop_subscriptions 
-           WHERE shop_id = $1 AND status IN ('ACTIVE', 'TRIAL', 'CANCELLED', 'EXPIRED')`,
-          [shopId]
-        );
-        hasPreviousSubscription = previousSubscriptionsResult.rows[0].count > 0;
-      }
-    } catch (error) {
-      console.error('❌ Error checking previous subscriptions:', error);
-      // Continue anyway - default to showing trial
-    } finally {
-      client.release();
-    }
-    
+    // Trial is always available - every shop gets 7-day free trial when installing
+    // Shopify will handle any restrictions if a shop has already used a trial
     res.json({
       success: true,
       data: {
@@ -1191,7 +1168,7 @@ router.get('/shopify/plans', shopifyAuthenticate, async (req: ShopifyRequest, re
           maxQuizzes: plan.maxQuizzes,
           features: plan.features
         })),
-        hasPreviousSubscription
+        hasPreviousSubscription: false
       }
     });
   } catch (error: any) {

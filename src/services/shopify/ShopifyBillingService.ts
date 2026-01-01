@@ -47,8 +47,7 @@ export class ShopifyBillingService extends BaseService {
         }
       }
 
-      // Check if shop has ever had a subscription (excluding PENDING) to determine trial eligibility
-      // If a shop has already had a subscription (ACTIVE, TRIAL, CANCELLED, EXPIRED), they don't get trial again
+      // Get shop_id from database
       const shopResult = await client.query('SELECT shop_id FROM shops WHERE shop_domain = $1', [shopDomain]);
       if (shopResult.rows.length === 0) {
         throw new Error(`Shop not found: ${shopDomain}`);
@@ -71,21 +70,10 @@ export class ShopifyBillingService extends BaseService {
         console.error(`⚠️ Error cleaning up PENDING subscriptions for shop ${shopDomain}:`, cleanupError);
       }
 
-      const previousSubscriptionResult = await client.query(
-        `SELECT COUNT(*) as count FROM shop_subscriptions 
-         WHERE shop_id = $1 
-         AND status IN ('ACTIVE', 'TRIAL', 'CANCELLED', 'EXPIRED')`,
-        [shopId]
-      );
-
-      const hasPreviousSubscription = parseInt(previousSubscriptionResult.rows[0]?.count || '0') > 0;
-      const trialDays = hasPreviousSubscription ? 0 : plan.trialDays;
-
-      if (hasPreviousSubscription) {
-        console.log(`ℹ️ Shop ${shopDomain} has previous subscription history, trial disabled`);
-      } else {
-        console.log(`ℹ️ Shop ${shopDomain} is new, trial enabled (${trialDays} days)`);
-      }
+      // Always enable trial for new subscriptions (7 days)
+      // Trial is available every time a shop installs the app
+      const trialDays = plan.trialDays;
+      console.log(`ℹ️ Shop ${shopDomain} creating subscription with trial enabled (${trialDays} days)`);
 
       // Create GraphQL client
       const graphqlClient = await this.shopifyService.createGraphQLClient(shopDomain);
