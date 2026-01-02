@@ -111,7 +111,7 @@ export class ShopifyBillingService extends BaseService {
         name: `${plan.name} Plan`,
         trialDays: trialDays,
         returnUrl: returnUrl,
-        test: true, //process.env.NODE_ENV !== 'production',
+        test: process.env.NODE_ENV !== 'production',
         lineItems: [
           {
             plan: {
