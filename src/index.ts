@@ -107,8 +107,11 @@ app.use(errorHandler);
 
 // Start server
 app.listen(PORT, () => {
+  const nodeEnv = process.env.NODE_ENV;
+  const billingTestMode = nodeEnv !== 'production';
   console.log(`🚀 Quiz Funnel Backend API running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Environment: ${nodeEnv ?? 'undefined (defaults to development)'}`);
+  console.log(`💳 Shopify billing: ${billingTestMode ? 'TEST (no real charges)' : 'LIVE (real charges)'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📝 API endpoints:`);
   console.log(`   - POST http://localhost:${PORT}/api/auth/register`);
